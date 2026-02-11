@@ -2,7 +2,7 @@
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) that bridges [MapWarper](https://mapwarper.net) maps to [Allmaps](https://allmaps.org/) via IIIF endpoints.
 
-Deployed at: https://mapwarper-allmaps-bridge.ram.workers.dev/
+Deployed at: https://mapwarper-allmaps-bridge.ramseraph.workers.dev/
 
 ## What it does
 
