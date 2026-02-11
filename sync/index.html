@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MapWarper ↔ Allmaps Sync</title>
+  <base href="/sync/">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>MapWarper ↔ Allmaps Sync</h1>
+    <p>Compare and sync georeferencing data between MapWarper and Allmaps</p>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <button class="tab active" data-tab="maps">Maps</button>
+      <button class="tab" data-tab="mosaics">Mosaics</button>
+    </div>
+
+    <div class="filters">
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="Search maps..." autocomplete="off">
+        <button id="search-btn" class="btn btn-primary">🔍 Search</button>
+        <button id="clear-search-btn" class="btn btn-secondary hidden">✕ Clear</button>
+      </div>
+      <label id="rectified-filter-container">
+        <input type="checkbox" id="rectified-only">
+        Show only rectified maps
+      </label>
+      <button id="refresh-btn" class="btn btn-secondary">↻ Refresh</button>
+    </div>
+
+    <div class="tab-content" id="maps-content">
+      <div class="cards-grid" id="maps-grid"></div>
+      <div class="pagination" id="maps-pagination"></div>
+    </div>
+
+    <div class="tab-content hidden" id="mosaics-content">
+      <div class="cards-grid" id="mosaics-grid"></div>
+      <div class="pagination" id="mosaics-pagination"></div>
+    </div>
+
+    <div class="loading hidden" id="loading">
+      <div class="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  </main>
+
+  <div class="modal hidden" id="status-modal">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <h2 id="modal-title">Sync Status</h2>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

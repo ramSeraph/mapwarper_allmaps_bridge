@@ -49,4 +49,4 @@ npm run deploy   # Deploy to Cloudflare
 
 ## License
 
-[Unlicense](https://unlicense.org/)
+[Unlicense](./UNLICENSE)

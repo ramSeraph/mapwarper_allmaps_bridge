@@ -1,0 +1,42 @@
+{
+  "name": "mapwarper-allmaps-bridge",
+  "version": "1.0.0",
+  "description": "IIIF bridge between MapWarper and Allmaps with sync tools",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev:worker": "wrangler dev src/worker.ts",
+    "deploy": "wrangler deploy src/worker.ts",
+    "deploy:preview": "wrangler deploy src/worker.ts --env preview",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "keywords": [
+    "iiif",
+    "mapwarper",
+    "maps",
+    "wms",
+    "cloudflare-workers"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@allmaps/annotation": "^1.0.0-beta.36",
+    "@hono/node-server": "^1.8.0",
+    "hono": "^4.0.0",
+    "iiif-processor": "^7.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.55.0",
+    "@typescript-eslint/parser": "^8.55.0",
+    "eslint": "^9.39.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.55.0",
+    "wrangler": "^4.64.0"
+  }
+}
