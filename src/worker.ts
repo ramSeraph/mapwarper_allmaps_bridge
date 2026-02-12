@@ -205,18 +205,24 @@ app.get("/mapwarper/maps/:identifier/iiif/manifest.json", async (c) => {
   }
 });
 
-// Proxy endpoint for MapWarper mask (CORS workaround)
-app.get("/mapwarper/maps/:identifier/mask.json", async (c) => {
+// IIIF-format mask endpoint - returns coordinates with Y=0 at top
+app.get("/mapwarper/maps/:identifier/iiif/mask.json", async (c) => {
   const identifier = c.req.param("identifier");
 
   try {
-    const maskCoords = await getMapMask(identifier);
+    const [maskCoords, mapInfo] = await Promise.all([
+      getMapMask(identifier),
+      getMapInfoForIIIF(identifier)
+    ]);
     
-    if (!maskCoords || maskCoords.length === 0) {
+    if (!maskCoords || maskCoords.length < 3) {
       return c.json({ error: "No mask found for this map" }, 404);
     }
     
-    return c.json({ coords: maskCoords });
+    // Flip Y-axis: MapWarper has Y=0 at bottom, IIIF has Y=0 at top
+    const iiifCoords = maskCoords.map(([x, y]) => [x, mapInfo.height - y]);
+    
+    return c.json({ coords: iiifCoords });
   } catch (error) {
     return handleError(c, error, "fetching mask");
   }

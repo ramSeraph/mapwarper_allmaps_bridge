@@ -45,7 +45,7 @@ async function fetchSyncData(mapId, iiifUrl) {
   const [iiifInfo, gcpsResponse, maskCoords, allmapsAnnotation] = await Promise.all([
     fetch(`${iiifUrl}/info.json`).then(r => r.json()),
     fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`).then(r => r.json()),
-    fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`)
+    fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
       .then(r => r.ok ? r.json() : null)
       .then(d => d?.coords || null)
       .catch(() => null),
@@ -59,7 +59,7 @@ async function fetchSyncData(mapId, iiifUrl) {
   const gcpsMatch = compareGcps(mwGcps, allmapsGcps);
   const hasMwMask = maskCoords && maskCoords.length >= 3;
   const effectiveMwMask = maskCoords || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
-  const masksMatch = compareMasks(effectiveMwMask, allmapsMask, iiifInfo.height);
+  const masksMatch = compareMasks(effectiveMwMask, allmapsMask);
   
   return { iiifInfo, mwGcps, allmapsGcps, maskCoords, gcpsMatch, masksMatch, hasMwMask, iiifUrl };
 }
@@ -69,7 +69,7 @@ function updateStatusAndControls(data, mode, updateContent = true) {
   
   if (mode === 'allmaps') {
     updateSyncStatus(mwGcps.length, allmapsGcps.length, gcpsMatch, masksMatch, hasMwMask);
-    updateAllmapsControls(mwGcps, maskCoords, iiifInfo.height, gcpsMatch, masksMatch);
+    updateAllmapsControls(mwGcps, maskCoords, gcpsMatch, masksMatch);
     if (updateContent) {
       const editorUrl = getAllmapsEditorUrl(iiifUrl);
       contentEl.innerHTML = `<iframe class="editor-frame" src="${editorUrl}" allow="fullscreen"></iframe>`;
@@ -90,7 +90,7 @@ function updateStatusAndControls(data, mode, updateContent = true) {
   }
 }
 
-function updateAllmapsControls(mwGcps, maskCoords, height, gcpsMatch, masksMatch) {
+function updateAllmapsControls(mwGcps, maskCoords, gcpsMatch, masksMatch) {
   let controls = '';
   
   if (mwGcps.length > 0 && !gcpsMatch) {
@@ -109,7 +109,8 @@ function updateAllmapsControls(mwGcps, maskCoords, height, gcpsMatch, masksMatch
   }
   
   if (maskCoords && maskCoords.length >= 3 && !masksMatch) {
-    const clipText = maskCoords.map(([x, y]) => `${x},${height - y}`).join('\n');
+    // Mask coords are already in IIIF format (Y=0 at top)
+    const clipText = maskCoords.map(([x, y]) => `${x},${y}`).join('\n');
     controls += `
       <div class="copy-section expandable">
         <label>MW Clip:</label>

@@ -122,17 +122,15 @@ export function compareGcps(mwGcps, allmapsGcps) {
 }
 
 // Compare masks between MapWarper and Allmaps
-export function compareMasks(mwMask, allmapsMask, imageHeight) {
+// Both masks should be in IIIF format (Y=0 at top)
+export function compareMasks(mwMask, allmapsMask) {
   if (!allmapsMask) return !mwMask || mwMask.length < 3;
   if (!mwMask || mwMask.length < 3) return false;
   if (mwMask.length !== allmapsMask.length) return false;
   
-  // Convert MW mask to Allmaps coordinate system (flip Y)
-  const mwConverted = mwMask.map(([x, y]) => [x, imageHeight - y]);
-  
   const tolerance = 1;
-  for (let i = 0; i < mwConverted.length; i++) {
-    const mw = mwConverted[i];
+  for (let i = 0; i < mwMask.length; i++) {
+    const mw = mwMask[i];
     const am = allmapsMask[i];
     if (Math.abs(mw[0] - am[0]) > tolerance || Math.abs(mw[1] - am[1]) > tolerance) {
       return false;

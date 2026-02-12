@@ -645,7 +645,7 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
     const [gcpsRes, infoRes, maskRes] = await Promise.all([
       fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
       fetch(`${iiifUrl}/info.json`),
-      fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`)
+      fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
     ]);
     
     if (!gcpsRes.ok) throw new Error('Failed to fetch GCPs');
@@ -660,18 +660,21 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
       return;
     }
     
-    // Get mask coords (use image perimeter if no mask)
+    // Get mask coords (use image perimeter if no mask or invalid mask)
+    // Mask endpoint returns IIIF-format coordinates (Y=0 at top)
+    const defaultMask = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
     let maskCoords;
     if (maskRes.ok) {
       const maskData = await maskRes.json();
-      maskCoords = maskData.coordinates || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+      maskCoords = (maskData.coords && maskData.coords.length >= 3) ? maskData.coords : defaultMask;
     } else {
-      maskCoords = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+      maskCoords = defaultMask;
     }
     
     // Build GeoreferencedMap object for @allmaps/annotation
     const georeferencedMap = {
       type: 'GeoreferencedMap',
+      '@context': 'https://schemas.allmaps.org/map/2/context.json',
       resource: {
         id: iiifUrl,
         type: 'ImageService2',
@@ -687,17 +690,8 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
     
     const annotation = generateAnnotation(georeferencedMap);
     const jsonStr = JSON.stringify(annotation, null, 0);
-    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
-    
-    // Check if URL is too long
-    if (viewerUrl.length > 8000) {
-      urlSpan.innerHTML = `<span style="color:#e67e22;">URL too long</span> 
-        <button class="btn-link" onclick="copyAnnotationJson('_mapAnnotations', '${mapId}')">Copy JSON</button>`;
-      window._mapAnnotations = window._mapAnnotations || {};
-      window._mapAnnotations[mapId] = jsonStr;
-    } else {
-      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗</a>`;
-    }
+    const { html } = generateViewerLinkHtml(jsonStr);
+    urlSpan.innerHTML = html;
   } catch (err) {
     urlSpan.textContent = 'Error';
     console.error('Failed to generate MW viewer URL:', err);
@@ -719,7 +713,7 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
       const [gcpsRes, infoRes, maskRes] = await Promise.all([
         fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
         fetch(`${iiifUrl}/info.json`),
-        fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`)
+        fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
       ]);
       
       if (!gcpsRes.ok || !infoRes.ok) return null;
@@ -730,17 +724,20 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
       
       if (gcps.length === 0) return null;
       
-      // Get mask coords (use image perimeter if no mask)
+      // Get mask coords (use image perimeter if no mask or invalid mask)
+      // Mask endpoint returns IIIF-format coordinates (Y=0 at top)
+      const defaultMask = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
       let maskCoords;
       if (maskRes.ok) {
         const maskData = await maskRes.json();
-        maskCoords = maskData.coordinates || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+        maskCoords = (maskData.coords && maskData.coords.length >= 3) ? maskData.coords : defaultMask;
       } else {
-        maskCoords = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+        maskCoords = defaultMask;
       }
       
       return {
         type: 'GeoreferencedMap',
+        '@context': 'https://schemas.allmaps.org/map/2/context.json',
         resource: {
           id: iiifUrl,
           type: 'ImageService2',
@@ -771,18 +768,8 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
     
     const annotation = generateAnnotation(georeferencedMaps);
     const jsonStr = JSON.stringify(annotation, null, 0);
-    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
-    
-    // Check if URL is too long (browsers typically limit to ~2000-8000 chars)
-    if (viewerUrl.length > 8000) {
-      urlSpan.innerHTML = `<span style="color:#e67e22;">${georeferencedMaps.length} maps - URL too long</span> 
-        <button class="btn-link" onclick="copyAnnotationJson('_mosaicAnnotations', '${layerId}')">Copy JSON</button>`;
-      // Store annotation for copy
-      window._mosaicAnnotations = window._mosaicAnnotations || {};
-      window._mosaicAnnotations[layerId] = jsonStr;
-    } else {
-      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗ (${georeferencedMaps.length} maps)</a>`;
-    }
+    const { html } = generateViewerLinkHtml(jsonStr, `Open ↗ (${georeferencedMaps.length} maps)`);
+    urlSpan.innerHTML = html;
   } catch (err) {
     urlSpan.textContent = 'Error';
     console.error('Failed to generate mosaic viewer URL:', err);
@@ -794,9 +781,16 @@ function copyAnnotationJson(store, id) {
   const jsonStr = window[store]?.[id];
   if (jsonStr) {
     navigator.clipboard.writeText(jsonStr).then(() => {
-      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
+      alert(`Annotation JSON copied!\n\nOpen Allmaps Viewer to paste:\nhttps://viewer.allmaps.org/`);
     });
   }
+}
+
+// Generate viewer link HTML from annotation JSON
+// Uses hash fragment (#data=) instead of query string (?data=) to avoid server-side URL limits
+function generateViewerLinkHtml(jsonStr, label = 'Open ↗') {
+  const viewerUrl = `https://viewer.allmaps.org/#data=${encodeURIComponent(jsonStr)}`;
+  return { html: `<a href="${viewerUrl}" target="_blank">${label}</a>`, viewerUrl, jsonStr };
 }
 
 // Generate Allmaps mosaic viewer URL by fetching annotations from Allmaps
@@ -844,17 +838,8 @@ async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
     
     const annotation = generateAnnotation(allGeoreferencedMaps);
     const jsonStr = JSON.stringify(annotation, null, 0);
-    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
-    
-    // Check if URL is too long
-    if (viewerUrl.length > 8000) {
-      urlSpan.innerHTML = `<span style="color:#e67e22;">${allGeoreferencedMaps.length} maps - URL too long</span> 
-        <button class="btn-link" onclick="copyAnnotationJson('_allmapsMosaicAnnotations', '${layerId}')">Copy JSON</button>`;
-      window._allmapsMosaicAnnotations = window._allmapsMosaicAnnotations || {};
-      window._allmapsMosaicAnnotations[layerId] = jsonStr;
-    } else {
-      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗ (${allGeoreferencedMaps.length} maps)</a>`;
-    }
+    const { html } = generateViewerLinkHtml(jsonStr, `Open ↗ (${allGeoreferencedMaps.length} maps)`);
+    urlSpan.innerHTML = html;
   } catch (err) {
     urlSpan.textContent = 'Error';
     console.error('Failed to generate Allmaps mosaic viewer URL:', err);
