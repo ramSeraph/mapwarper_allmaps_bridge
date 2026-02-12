@@ -119,3 +119,13 @@ export interface GCP {
   lat: number;
   lon: number;
 }
+
+/** GCP API response item */
+export interface GcpApiItem {
+  attributes: {
+    x: number;
+    y: number;
+    lat: string;
+    lon: string;
+  };
+}

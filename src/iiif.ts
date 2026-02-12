@@ -4,7 +4,7 @@
  */
 
 import { MapWarperClient } from "./mapwarper.js";
-import { MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError, GCP } from "./types.js";
+import { MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError } from "./types.js";
 
 // Hardcoded MapWarper base URL
 const client = new MapWarperClient("https://mapwarper.net");
@@ -27,12 +27,6 @@ export interface ParsedRegion {
   y: number;
   width: number;
   height: number;
-}
-
-export interface ParsedSize {
-  width: number | null;
-  height: number | null;
-  upscale: boolean;
 }
 
 /**
@@ -205,13 +199,6 @@ export async function getLayerInfo(identifier: string, skipCache = false): Promi
   const layerInfo = await client.getLayer(identifier);
   layerCache.set(identifier, layerInfo);
   return layerInfo;
-}
-
-/**
- * Get GCPs for a map
- */
-export async function getMapGCPs(identifier: string): Promise<GCP[]> {
-  return client.getGCPs(identifier);
 }
 
 /**

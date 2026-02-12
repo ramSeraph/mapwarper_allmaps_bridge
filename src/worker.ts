@@ -3,15 +3,41 @@
  * IIIF Image API 3.0 compliant server for MapWarper maps with Allmaps sync tools
  */
 
-import { Hono } from "hono";
+import { Hono, Context } from "hono";
 import { cors } from "hono/cors";
-import { processImageRequest, getMapInfoForIIIF, getLayerInfo, getMapGCPs, getMapMask, MapNotFoundError, LayerNotFoundError } from "./iiif.js";
+import { processImageRequest, getMapInfoForIIIF, getLayerInfo, getMapMask, MapNotFoundError, LayerNotFoundError } from "./iiif.js";
 
 type Bindings = {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+// Common headers for IIIF responses
+const IIIF_HEADERS = {
+  "Content-Type": "application/ld+json",
+  "Access-Control-Allow-Origin": "*",
+  "Cache-Control": "no-cache",
+};
+
+/**
+ * Handle common errors and return appropriate responses
+ */
+function handleError(c: Context, error: unknown, context: string) {
+  if (error instanceof MapNotFoundError || error instanceof LayerNotFoundError) {
+    return c.json({ error: error.message }, 404);
+  }
+  console.error(`Error ${context}:`, error);
+  return c.json({ error: "Internal server error" }, 500);
+}
+
+/**
+ * Return JSON response with IIIF headers
+ */
+function jsonWithIiifHeaders(c: Context, data: object) {
+  Object.entries(IIIF_HEADERS).forEach(([key, value]) => c.header(key, value));
+  return c.json(data);
+}
 
 // Middleware
 app.use("*", cors());
@@ -78,16 +104,9 @@ app.get("/mapwarper/maps/:identifier/iiif/info.json", async (c) => {
       sizes: generateSizes(mapInfo.width, mapInfo.height),
     };
 
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("Cache-Control", "no-cache");
-    return c.json(info);
+    return jsonWithIiifHeaders(c, info);
   } catch (error) {
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error processing info.json:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    return handleError(c, error, "processing info.json");
   }
 });
 
@@ -180,16 +199,9 @@ app.get("/mapwarper/maps/:identifier/iiif/manifest.json", async (c) => {
       ],
     };
 
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("Cache-Control", "no-cache");
-    return c.json(manifest);
+    return jsonWithIiifHeaders(c, manifest);
   } catch (error) {
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error generating manifest:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    return handleError(c, error, "generating manifest");
   }
 });
 
@@ -206,11 +218,7 @@ app.get("/mapwarper/maps/:identifier/mask.json", async (c) => {
     
     return c.json({ coords: maskCoords });
   } catch (error) {
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: "Map not found" }, 404);
-    }
-    console.error("Mask error:", error);
-    return c.json({ error: "Failed to fetch mask" }, 500);
+    return handleError(c, error, "fetching mask");
   }
 });
 
@@ -283,19 +291,9 @@ app.get("/mapwarper/mosaic/:identifier/manifest.json", async (c) => {
       items,
     };
 
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("Cache-Control", "no-cache");
-    return c.json(manifest);
+    return jsonWithIiifHeaders(c, manifest);
   } catch (error) {
-    if (error instanceof LayerNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error generating mosaic manifest:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    return handleError(c, error, "generating mosaic manifest");
   }
 });
 
@@ -327,11 +325,7 @@ app.get("/mapwarper/maps/:identifier/iiif/:region/:size/:rotation/:qualityFormat
       },
     });
   } catch (error) {
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error processing image request:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    return handleError(c, error, "processing image request");
   }
 });
 

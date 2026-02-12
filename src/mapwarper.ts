@@ -3,7 +3,7 @@
  * Fetches map metadata from the MapWarper API
  */
 
-import { MapWarperApiResponse, MapWarperLayerApiResponse, MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError, GCP } from "./types.js";
+import { MapWarperApiResponse, MapWarperLayerApiResponse, MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError, GCP, GcpApiItem } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://mapwarper.net";
 
@@ -98,14 +98,6 @@ export class MapWarperClient {
     }
 
     const data = await response.json() as { data?: GcpApiItem[] };
-    interface GcpApiItem {
-      attributes: {
-        x: number;
-        y: number;
-        lat: string;
-        lon: string;
-      };
-    }
     return (data.data || []).map((gcp: GcpApiItem) => ({
       x: gcp.attributes.x,
       y: gcp.attributes.y,
