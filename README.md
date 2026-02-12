@@ -28,7 +28,6 @@ The included sync tool helps with bidirectional workflow between MapWarper and A
 | `GET /mapwarper/maps/{mapId}/iiif/info.json` | IIIF Image Information |
 | `GET /mapwarper/maps/{mapId}/iiif/manifest.json` | IIIF Presentation Manifest |
 | `GET /mapwarper/maps/{mapId}/iiif/{region}/{size}/{rotation}/{quality}.{format}` | Image tile/region |
-| `GET /mapwarper/maps/{mapId}/annotation.json` | Allmaps georeference annotation (from MapWarper GCPs) |
 | `GET /mapwarper/maps/{mapId}/mask.json` | Map mask coordinates |
 
 ### Mosaics/Layers

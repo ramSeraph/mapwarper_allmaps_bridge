@@ -73,15 +73,15 @@
 
   <script>
     const params = new URLSearchParams(window.location.search);
-    const mapwarperUrl = params.get('mapwarper_url');
+    const mapwarperData = params.get('mapwarper_data');
     const allmapsUrl = params.get('allmaps_url');
     const contentEl = document.getElementById('content');
 
-    if (!mapwarperUrl || !allmapsUrl) {
-      contentEl.innerHTML = '<div class="error">Missing required parameters.<br><br>Usage: ?mapwarper_url=...&allmaps_url=...</div>';
+    if (!mapwarperData || !allmapsUrl) {
+      contentEl.innerHTML = '<div class="error">Missing required parameters.<br><br>Usage: ?mapwarper_data=...&allmaps_url=...</div>';
     } else {
       // Build Allmaps viewer URLs
-      const leftViewerUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(mapwarperUrl)}`;
+      const leftViewerUrl = `https://viewer.allmaps.org/?data=${mapwarperData}`;
       const rightViewerUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(allmapsUrl)}`;
       
       contentEl.innerHTML = `

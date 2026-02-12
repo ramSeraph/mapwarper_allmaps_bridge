@@ -3,6 +3,8 @@
  * Compare and sync georeferencing data between MapWarper and Allmaps
  */
 
+import { generateAnnotation } from 'https://esm.sh/@allmaps/annotation@1.0.0-beta.36';
+
 const CONFIG = {
   mapwarperBaseUrl: 'https://mapwarper.net',
   allmapsAnnotationsUrl: 'https://annotations.allmaps.org',
@@ -12,13 +14,6 @@ const CONFIG = {
 // Generate IIIF URL for a map
 function getMapIiifUrl(mapId) {
   return `${window.location.origin}/mapwarper/maps/${mapId}/iiif`;
-}
-
-// Generate compare page URL
-function getCompareUrl(mapId, iiifUrl) {
-  const mapwarperAnnotationUrl = `${window.location.origin}/mapwarper/maps/${mapId}/annotation.json`;
-  const allmapsAnnotationUrl = `https://annotations.allmaps.org/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
-  return `${window.location.origin}/sync/compare.html?mapwarper_url=${encodeURIComponent(mapwarperAnnotationUrl)}&allmaps_url=${encodeURIComponent(allmapsAnnotationUrl)}`;
 }
 
 // URL params sync
@@ -115,10 +110,6 @@ const elements = {
   searchInput: document.getElementById('search-input'),
   searchBtn: document.getElementById('search-btn'),
   clearSearchBtn: document.getElementById('clear-search-btn'),
-  modal: document.getElementById('status-modal'),
-  modalClose: document.getElementById('modal-close'),
-  modalTitle: document.getElementById('modal-title'),
-  modalBody: document.getElementById('modal-body'),
 };
 
 // Initialize
@@ -201,12 +192,6 @@ function setupEventListeners() {
     } else {
       loadMosaics();
     }
-  });
-
-  // Modal close
-  elements.modalClose.addEventListener('click', closeModal);
-  elements.modal.addEventListener('click', (e) => {
-    if (e.target === elements.modal) closeModal();
   });
 }
 
@@ -409,15 +394,6 @@ function formatMaskAsPlainText(coords) {
   return coords.map(([x, y]) => `${x},${y}`).join('\n');
 }
 
-function formatMaskAsJson(coords) {
-  return JSON.stringify(coords);
-}
-
-function formatMaskAsSvg(coords) {
-  const points = coords.map(([x, y]) => `${x},${y}`).join(' ');
-  return `<polygon points="${points}"/>`;
-}
-
 async function generateAllmapsId(iiifUrl) {
   const encoder = new TextEncoder();
   const data = encoder.encode(iiifUrl);
@@ -530,6 +506,12 @@ async function loadMosaicDetail(layerId) {
                 <div class="card-actions" style="margin-top:0.25rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                   <a href="${CONFIG.mapwarperBaseUrl}/layers/${layer.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
                 </div>
+                <div class="card-links">
+                  <button class="btn-link" onclick="generateMosaicViewerUrl('${layer.id}', '${mapIds.join(',')}')">View MW in Allmaps</button>
+                  <span id="mosaic-viewer-url-${layer.id}" class="generated-url"></span>
+                  <button class="btn-link" onclick="generateAllmapsMosaicViewerUrl('${layer.id}', '${mapIds.join(',')}')">View Allmaps in Allmaps</button>
+                  <span id="allmaps-mosaic-viewer-url-${layer.id}" class="generated-url"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -586,8 +568,14 @@ function renderMapCard(map) {
     thumbUrl = `${CONFIG.mapwarperBaseUrl}/maps/thumb/${map.id}`;
   }
   const iiifUrl = `${getMapIiifUrl(map.id)}`;
-  const allmapsEditorUrl = `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+  const editorAllmapsUrl = `editor.html?map=${map.id}&mode=allmaps`;
+  const editorMapwarperUrl = `editor.html?map=${map.id}&mode=mapwarper`;
   const shareUrl = `${window.location.origin}${window.location.pathname}?q=${map.id}`;
+  
+  // Links
+  const mwWarpUrl = `${CONFIG.mapwarperBaseUrl}/maps/${map.id}/warp`;
+  const allmapsEditorUrl = `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+  const allmapsViewerUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
   
   return `
     <div class="card" data-id="${map.id}" data-type="map">
@@ -602,14 +590,17 @@ function renderMapCard(map) {
             <div class="card-meta">ID: ${map.id}</div>
             <div class="card-meta">Status: ${attrs.status}</div>
             <div class="card-actions" style="margin-top:0.25rem;">
-              <a href="${CONFIG.mapwarperBaseUrl}/maps/${map.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
-              <a href="${allmapsEditorUrl}" target="_blank" class="btn btn-small" style="background:#9b59b6;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">Allmaps</a>
+              <a href="${editorAllmapsUrl}" target="_blank" class="btn btn-small" style="background:#9b59b6;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="Sync georeferencing to Allmaps">Sync to Allmaps</a>
+              <a href="${editorMapwarperUrl}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="Sync georeferencing to MapWarper">Sync to MW</a>
+            </div>
+            <div class="card-links">
+              <a href="${mwWarpUrl}" target="_blank">Edit in MW</a>
+              <a href="${allmapsEditorUrl}" target="_blank">Edit in Allmaps</a>
+              <a href="${allmapsViewerUrl}" target="_blank">View in Allmaps</a>
+              <button class="btn-link" onclick="generateMwViewerUrl('${map.id}', '${iiifUrl}')">View MW in Allmaps</button>
+              <span id="mw-viewer-url-${map.id}" class="generated-url"></span>
             </div>
           </div>
-        </div>
-        <div class="card-right">
-          <button class="btn btn-primary btn-small" style="width:100%;" onclick="fetchStatus('${map.id}', 'map')">Fetch Status</button>
-          <div id="status-${map.id}" class="status-container"></div>
         </div>
       </div>
       <div class="card-metadata">
@@ -646,12 +637,13 @@ function renderMosaics(data) {
             <img class="card-thumbnail" src="${thumbUrl}" alt="${attrs.name}" loading="lazy" onerror="this.outerHTML='<div class=\\'card-thumbnail\\' style=\\'display:flex;align-items:center;justify-content:center;background:#e0e0e0;color:#666;width:70px;height:100px;border-radius:4px;font-size:0.6rem;\\'><span>No img</span></div>'">
             <div class="card-info">
               <div class="card-title" title="${attrs.name}">
-                <a href="?mosaic=${layer.id}" style="color:inherit;text-decoration:none;">${attrs.name || 'Untitled'}</a>
+                ${attrs.name || 'Untitled'}
                 <a href="${shareUrl}" onclick="event.preventDefault();copyToClipboard('${shareUrl}')" title="Copy share link" style="margin-left:0.25rem;text-decoration:none;font-size:0.8rem;">🔗</a>
               </div>
               <div class="card-meta">ID: ${layer.id}</div>
               <div class="card-meta">Maps: ${attrs.maps_count} | Rectified: ${attrs.rectified_percent}%</div>
               <div class="card-actions" style="margin-top:0.25rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <a href="?mosaic=${layer.id}" class="btn btn-small" style="background:#3498db;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">List Maps</a>
                 <a href="${CONFIG.mapwarperBaseUrl}/layers/${layer.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
               </div>
             </div>
@@ -700,459 +692,6 @@ function renderStatusBadge(status) {
 }
 
 // Status fetching
-async function fetchStatus(mapId, type = 'map') {
-  const statusContainer = document.getElementById(`status-${mapId}`);
-  statusContainer.innerHTML = '<span class="status-badge">Loading...</span>';
-  
-  try {
-    const iiifUrl = `${getMapIiifUrl(mapId)}`;
-    
-    // Fetch IIIF info.json to get image dimensions
-    const iiifInfo = await fetch(`${iiifUrl}/info.json`).then(r => r.json());
-    
-    // Fetch MapWarper GCPs and mask in parallel
-    const [gcpsData, maskCoords] = await Promise.all([
-      fetchMapWarperGCPs(mapId),
-      fetchMapWarperMask(mapId).catch(() => null),
-    ]);
-    const mapwarperGcps = gcpsData.data || [];
-    
-    // Fetch Allmaps annotation
-    const allmapsAnnotation = await fetchAllmapsAnnotation(iiifUrl);
-    
-    // Parse Allmaps GCPs and mask if available
-    let allmapsGcps = [];
-    let allmapsMask = null;
-    if (allmapsAnnotation) {
-      allmapsGcps = parseAllmapsGcps(allmapsAnnotation);
-      allmapsMask = parseAllmapsMask(allmapsAnnotation);
-    }
-    
-    // Determine status with full comparison
-    const status = determineStatus(mapwarperGcps, allmapsGcps, maskCoords, allmapsMask);
-    status.mapwarperGcps = mapwarperGcps;
-    status.allmapsGcps = allmapsGcps;
-    status.allmapsAnnotation = allmapsAnnotation;
-    status.iiifUrl = iiifUrl;
-    status.iiifInfo = iiifInfo;
-    status.mapId = mapId;
-    status.maskCoords = maskCoords;
-    status.allmapsMask = allmapsMask;
-    
-    // Cache status
-    state.statusCache.set(`map-${mapId}`, status);
-    
-    // Render inline status with sync buttons
-    const hasMapwarperGcps = mapwarperGcps.length > 0;
-    const hasAllmapsGcps = allmapsGcps.length > 0;
-    const isSynced = status.synced === true;
-    
-    // Compare GCPs only (for Sync to MapWarper button)
-    const gcpsMatch = hasMapwarperGcps && hasAllmapsGcps && compareGcps(mapwarperGcps, allmapsGcps).match;
-    
-    // Compare masks, treating no MapWarper mask as image perimeter
-    const effectiveMwMask = maskCoords || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
-    const masksMatch = hasMapwarperGcps && hasAllmapsGcps && compareMasks(effectiveMwMask, allmapsMask).match;
-    
-    // Button visibility rules:
-    // - Sync to Allmaps: show if MW has GCPs AND (Allmaps empty OR both GCPs and mask match)
-    // - Sync to MapWarper: show if Allmaps has GCPs AND GCPs don't match (mask doesn't matter)
-    // - Compare: show only if both have GCPs and not synced
-    const showSyncToAllmaps = hasMapwarperGcps && (!hasAllmapsGcps || (gcpsMatch && masksMatch));
-    const showSyncToMapwarper = hasAllmapsGcps && !gcpsMatch;
-    const showCompare = hasMapwarperGcps && hasAllmapsGcps && !isSynced;
-    
-    let html = `
-      <div class="status-info" style="margin-top:0.5rem;">
-        <div style="display:flex;justify-content:space-between;gap:0.25rem;margin-bottom:0.5rem;">
-          <div style="padding:0.25rem 0.5rem;border-radius:4px;font-size:0.65rem;min-width:75px;text-align:center;${hasMapwarperGcps ? 'background:#d4edda;color:#155724;' : 'background:#f8d7da;color:#721c24;'}" title="${hasMapwarperGcps ? 'Georeferencing available in MapWarper' : 'No georeferencing in MapWarper'}">
-            ${hasMapwarperGcps ? '✓ MapWarper' : '✗ MapWarper'}
-          </div>
-          <div style="padding:0.25rem 0.5rem;border-radius:4px;font-size:0.65rem;min-width:75px;text-align:center;${hasAllmapsGcps ? 'background:#d4edda;color:#155724;' : 'background:#f8d7da;color:#721c24;'}" title="${hasAllmapsGcps ? 'Georeferencing available in Allmaps' : 'No georeferencing in Allmaps'}">
-            ${hasAllmapsGcps ? '✓ Allmaps' : '✗ Allmaps'}
-          </div>
-        </div>
-        ${isSynced ? `
-        <div style="padding:0.25rem 0.5rem;border-radius:4px;font-size:0.7rem;text-align:center;background:#d4edda;color:#155724;margin-bottom:0.5rem;">
-          ✓ Synced - GCPs and mask match
-        </div>
-        ` : `
-        <div class="card-actions" style="justify-content:space-between;">
-          ${showSyncToAllmaps ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToAllmaps('${mapId}')">→ Allmaps</button>` : (hasMapwarperGcps ? '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>→ Allmaps</button>' : '')}
-          ${showSyncToMapwarper ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToMapwarper('${mapId}')">MapWarper ←</button>` : (hasAllmapsGcps ? '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>MapWarper ←</button>' : '')}
-        </div>
-        ${showCompare ? `
-        <div class="card-actions" style="margin-top:0.25rem;">
-          <a href="${getCompareUrl(mapId, iiifUrl)}" target="_blank" class="btn btn-success" style="width:100%;padding:0.2rem 0.5rem;text-align:center;">🔍 Compare</a>
-        </div>
-        ` : ''}
-        `}
-      </div>
-    `;
-    
-    statusContainer.innerHTML = html;
-    
-  } catch (error) {
-    console.error('Error fetching status:', error);
-    statusContainer.innerHTML = `<span class="status-badge status-none">Error: ${error.message}</span>`;
-  }
-}
-
-async function fetchMosaicStatus(layerId) {
-  const statusContainer = document.getElementById(`status-mosaic-${layerId}`);
-  statusContainer.innerHTML = '<span class="status-badge">Mosaics: check individual maps</span>';
-}
-
-function parseAllmapsGcps(annotation) {
-  try {
-    // Handle different annotation formats
-    let gcps = [];
-    
-    // Handle AnnotationPage (items array)
-    if (annotation.type === 'AnnotationPage' && annotation.items) {
-      annotation.items.forEach(ann => {
-        if (ann.body?.features) {
-          ann.body.features.forEach(f => {
-            gcps.push({
-              x: f.properties?.resourceCoords?.[0],
-              y: f.properties?.resourceCoords?.[1],
-              lon: f.geometry?.coordinates?.[0],
-              lat: f.geometry?.coordinates?.[1],
-            });
-          });
-        }
-      });
-    } else if (annotation.body && annotation.body.features) {
-      // Single annotation
-      gcps = annotation.body.features.map(f => ({
-        x: f.properties?.resourceCoords?.[0],
-        y: f.properties?.resourceCoords?.[1],
-        lon: f.geometry?.coordinates?.[0],
-        lat: f.geometry?.coordinates?.[1],
-      }));
-    } else if (Array.isArray(annotation)) {
-      // Handle array of annotations
-      annotation.forEach(ann => {
-        if (ann.body?.features) {
-          ann.body.features.forEach(f => {
-            gcps.push({
-              x: f.properties?.resourceCoords?.[0],
-              y: f.properties?.resourceCoords?.[1],
-              lon: f.geometry?.coordinates?.[0],
-              lat: f.geometry?.coordinates?.[1],
-            });
-          });
-        }
-      });
-    }
-    
-    return gcps.filter(g => g.x !== undefined && g.lat !== undefined);
-  } catch (e) {
-    console.error('Error parsing Allmaps GCPs:', e);
-    return [];
-  }
-}
-
-// Parse mask from Allmaps annotation SVG selector
-function parseAllmapsMask(annotation) {
-  try {
-    let svgValue = null;
-    
-    if (annotation.type === 'AnnotationPage' && annotation.items?.[0]) {
-      svgValue = annotation.items[0].target?.selector?.value;
-    } else if (annotation.target?.selector?.value) {
-      svgValue = annotation.target.selector.value;
-    }
-    
-    if (!svgValue) return null;
-    
-    // Parse polygon points from SVG: <svg ...><polygon points="x1,y1 x2,y2 ..." /></svg>
-    const match = svgValue.match(/points="([^"]+)"/);
-    if (!match) return null;
-    
-    const coords = match[1].split(/\s+/).map(pair => {
-      const [x, y] = pair.split(',').map(Number);
-      return [x, y];
-    });
-    
-    return coords;
-  } catch (e) {
-    console.error('Error parsing Allmaps mask:', e);
-    return null;
-  }
-}
-
-// Compare GCPs with tolerance
-function compareGcps(mwGcps, amGcps, tolerance = 1) {
-  const differences = [];
-  
-  if (mwGcps.length !== amGcps.length) {
-    differences.push(`GCP count differs: MapWarper ${mwGcps.length}, Allmaps ${amGcps.length}`);
-    return { match: false, differences };
-  }
-  
-  // Sort both by x then y for consistent comparison
-  const sortFn = (a, b) => (a.x - b.x) || (a.y - b.y);
-  const mwSorted = [...mwGcps].map(g => ({ x: g.attributes?.x ?? g.x, y: g.attributes?.y ?? g.y, lon: g.attributes?.lon ?? g.lon, lat: g.attributes?.lat ?? g.lat })).sort(sortFn);
-  const amSorted = [...amGcps].sort(sortFn);
-  
-  for (let i = 0; i < mwSorted.length; i++) {
-    const mw = mwSorted[i];
-    const am = amSorted[i];
-    
-    const xDiff = Math.abs(mw.x - am.x);
-    const yDiff = Math.abs(mw.y - am.y);
-    const lonDiff = Math.abs(mw.lon - am.lon);
-    const latDiff = Math.abs(mw.lat - am.lat);
-    
-    if (xDiff > tolerance || yDiff > tolerance) {
-      differences.push(`GCP ${i+1} pixel coords differ: MW(${mw.x.toFixed(2)},${mw.y.toFixed(2)}) vs AM(${am.x.toFixed(2)},${am.y.toFixed(2)})`);
-    }
-    if (lonDiff > 0.0001 || latDiff > 0.0001) {
-      differences.push(`GCP ${i+1} geo coords differ: MW(${mw.lon.toFixed(6)},${mw.lat.toFixed(6)}) vs AM(${am.lon.toFixed(6)},${am.lat.toFixed(6)})`);
-    }
-  }
-  
-  return { match: differences.length === 0, differences };
-}
-
-// Compare masks with tolerance
-function compareMasks(mwMask, amMask, tolerance = 1) {
-  const differences = [];
-  
-  if (!mwMask && !amMask) return { match: true, differences: [] };
-  if (!mwMask || !amMask) {
-    differences.push(`Mask exists only in ${mwMask ? 'MapWarper' : 'Allmaps'}`);
-    return { match: false, differences };
-  }
-  
-  if (mwMask.length !== amMask.length) {
-    differences.push(`Mask point count differs: MapWarper ${mwMask.length}, Allmaps ${amMask.length}`);
-    return { match: false, differences };
-  }
-  
-  // Sort both by x then y for consistent comparison
-  const sortFn = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
-  const mwSorted = [...mwMask].sort(sortFn);
-  const amSorted = [...amMask].sort(sortFn);
-  
-  for (let i = 0; i < mwSorted.length; i++) {
-    const mw = mwSorted[i];
-    const am = amSorted[i];
-    
-    const xDiff = Math.abs(mw[0] - am[0]);
-    const yDiff = Math.abs(mw[1] - am[1]);
-    
-    if (xDiff > tolerance || yDiff > tolerance) {
-      differences.push(`Mask point ${i+1} differs: MW(${mw[0].toFixed(2)},${mw[1].toFixed(2)}) vs AM(${am[0].toFixed(2)},${am[1].toFixed(2)})`);
-    }
-  }
-  
-  return { match: differences.length === 0, differences };
-}
-
-function determineStatus(mapwarperGcps, allmapsGcps, mwMask, amMask) {
-  const hasMw = mapwarperGcps.length > 0;
-  const hasAm = allmapsGcps.length > 0;
-  
-  if (!hasMw && !hasAm) {
-    return { type: 'none', synced: false };
-  }
-  
-  if (hasMw && !hasAm) {
-    return { type: 'mapwarper-only', synced: false };
-  }
-  
-  if (!hasMw && hasAm) {
-    return { type: 'allmaps-only', synced: false };
-  }
-  
-  // Both have GCPs - compare them in detail
-  const gcpComparison = compareGcps(mapwarperGcps, allmapsGcps);
-  const maskComparison = compareMasks(mwMask, amMask);
-  
-  const allDifferences = [...gcpComparison.differences, ...maskComparison.differences];
-  
-  if (allDifferences.length > 0) {
-    console.log('=== Georeferencing Differences ===');
-    allDifferences.forEach(d => console.log(d));
-    console.log('==================================');
-    return { type: 'mismatch', synced: false, differences: allDifferences };
-  }
-  
-  console.log('=== Georeferencing Match ===');
-  console.log(`GCPs: ${mapwarperGcps.length} points match`);
-  console.log(`Mask: ${mwMask?.length || 0} points match`);
-  console.log('============================');
-  return { type: 'match', synced: true };
-}
-
-// Modal functions
-function closeModal() {
-  elements.modal.classList.add('hidden');
-}
-
-async function showSyncToAllmaps(mapId) {
-  const status = state.statusCache.get(`map-${mapId}`);
-  if (!status) return;
-  
-  elements.modalTitle.textContent = `Map ${mapId} - Sync to Allmaps`;
-  
-  // Generate URLs
-  const allmapsEditorUrl = `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(status.iiifUrl + '/info.json')}`;
-  const annotationUrl = `${window.location.origin}/mapwarper/maps/${mapId}/annotation.json`;
-  const allmapsViewerWithAnnotationUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(annotationUrl)}`;
-  
-  // Annotation section
-  const annotationSection = `
-  <div class="comparison-section">
-    <h3>MapWarper Georeferencing as Allmaps Annotation</h3>
-    <p style="margin-bottom:0.5rem;">This annotation is auto-generated from MapWarper GCPs:</p>
-    <div style="margin-bottom:1rem;">
-      <input type="text" value="${annotationUrl}" readonly style="width:100%;padding:0.5rem;font-size:0.8rem;margin-top:0.25rem;">
-      <div style="margin-top:0.5rem;">
-        <button class="btn btn-small" onclick="copyToClipboard('${annotationUrl}')">📋 Copy URL</button>
-        <a href="${annotationUrl}" target="_blank" class="btn btn-secondary btn-small">View JSON</a>
-        <a href="${allmapsViewerWithAnnotationUrl}" target="_blank" class="btn btn-success btn-small">🗺️ View in Allmaps Viewer</a>
-      </div>
-    </div>
-  </div>
-  `;
-  
-  // Allmaps Editor URL section
-  const editorSection = `
-  <div class="comparison-section">
-    <h3>Edit in Allmaps</h3>
-    <p style="margin-bottom:0.5rem;">Open Allmaps Editor to manually add/modify georeferencing:</p>
-    <div>
-      <input type="text" value="${allmapsEditorUrl}" readonly style="width:100%;padding:0.5rem;font-size:0.8rem;">
-      <div style="margin-top:0.5rem;">
-        <button class="btn btn-small" onclick="copyToClipboard('${allmapsEditorUrl}')">📋 Copy URL</button>
-        <a href="${allmapsEditorUrl}" target="_blank" class="btn btn-success btn-small">Open Allmaps Editor</a>
-      </div>
-    </div>
-  </div>
-  `;
-  
-  // Mask export section if mask exists
-  let maskSection = '';
-  if (status.maskCoords && status.maskCoords.length > 0) {
-    const svgFormat = formatMaskAsSvg(status.maskCoords);
-    
-    maskSection = `
-    <div class="comparison-section">
-      <h3>Mask for Allmaps (${status.maskCoords.length} points)</h3>
-      <p style="margin-bottom:0.5rem;">Copy this SVG and paste into Allmaps Editor resource mask:</p>
-      <textarea id="mask-svg" style="width:100%;height:80px;font-family:monospace;font-size:0.8rem;" readonly>${escapeHtml(svgFormat)}</textarea>
-      <button class="btn btn-small" onclick="copyMaskFormat('svg')">📋 Copy SVG</button>
-    </div>
-    `;
-  }
-  
-  // GCPs export section
-  const gcpsPlain = formatGcpsAsPlainText(status.mapwarperGcps);
-  const gcpsSection = `
-  <div class="comparison-section">
-    <h3>GCPs for Allmaps (${status.mapwarperGcps.length} points)</h3>
-    <p style="margin-bottom:0.5rem;">GDAL format (pixelX pixelY lon lat):</p>
-    <textarea id="gcps-plain" style="width:100%;height:120px;font-family:monospace;font-size:0.8rem;" readonly>${gcpsPlain}</textarea>
-    <button class="btn btn-small" onclick="copyGcpsFormat()">📋 Copy GCPs</button>
-  </div>
-  `;
-  
-  elements.modalBody.innerHTML = `
-    ${annotationSection}
-    ${editorSection}
-    ${gcpsSection}
-    ${maskSection}
-  `;
-  
-  elements.modal.classList.remove('hidden');
-}
-
-async function showSyncToMapwarper(mapId) {
-  const status = state.statusCache.get(`map-${mapId}`);
-  if (!status || !status.allmapsAnnotation) return;
-  
-  elements.modalTitle.textContent = `Map ${mapId} - Sync to MapWarper`;
-  
-  // Parse GCPs from Allmaps annotation
-  const allmapsGcps = status.allmapsGcps || [];
-  
-  // Format GCPs for MapWarper upload (CSV format: id,x,y,lon,lat)
-  const gcpsForMapwarper = allmapsGcps.map((gcp, i) => {
-    return `${gcp.x},${gcp.y},${gcp.lon},${gcp.lat}`;
-  }).join('\n');
-  
-  const mapwarperEditUrl = `${CONFIG.mapwarperBaseUrl}/maps/${mapId}/warp`;
-  
-  // Get Allmaps annotation URL for viewer
-  const allmapsAnnotationUrl = `https://annotations.allmaps.org/?url=${encodeURIComponent(status.iiifUrl + '/info.json')}`;
-  const allmapsViewerUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(allmapsAnnotationUrl)}`;
-  
-  const viewerSection = `
-  <div class="comparison-section">
-    <h3>View Allmaps Georeferencing</h3>
-    <p style="margin-bottom:0.5rem;">See how this map is georeferenced in Allmaps:</p>
-    <a href="${allmapsViewerUrl}" target="_blank" class="btn btn-success">🗺️ Open in Allmaps Viewer</a>
-  </div>
-  `;
-  
-  const gcpsSection = `
-  <div class="comparison-section">
-    <h3>GCPs from Allmaps (${allmapsGcps.length} points)</h3>
-    <p style="margin-bottom:0.5rem;">Format: x,y,lon,lat (MapWarper compatible)</p>
-    <textarea id="allmaps-gcps" style="width:100%;height:150px;font-family:monospace;font-size:0.8rem;" readonly>${gcpsForMapwarper}</textarea>
-    <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
-      <button class="btn btn-small" onclick="copyAllmapsGcps()">📋 Copy GCPs</button>
-      <button class="btn btn-small" onclick="downloadGcpsCsv('${mapId}')">⬇️ Download CSV</button>
-    </div>
-  </div>
-  `;
-  
-  const editSection = `
-  <div class="comparison-section">
-    <h3>Edit in MapWarper</h3>
-    <p style="margin-bottom:0.5rem;">Open MapWarper to manually add control points:</p>
-    <a href="${mapwarperEditUrl}" target="_blank" class="btn btn-primary">Open MapWarper Warp Editor</a>
-  </div>
-  `;
-  
-  elements.modalBody.innerHTML = `
-    ${viewerSection}
-    ${gcpsSection}
-    ${editSection}
-  `;
-  
-  elements.modal.classList.remove('hidden');
-}
-
-function copyAllmapsGcps() {
-  const textarea = document.getElementById('allmaps-gcps');
-  if (textarea) {
-    navigator.clipboard.writeText(textarea.value)
-      .then(() => alert('GCPs copied to clipboard!'))
-      .catch(err => alert('Failed to copy: ' + err));
-  }
-}
-
-function downloadGcpsCsv(mapId) {
-  const textarea = document.getElementById('allmaps-gcps');
-  if (textarea) {
-    // MapWarper CSV format: x,y,lon,lat (pixel coords, then geo coords)
-    const csvContent = 'x,y,lon,lat\n' + textarea.value;
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `gcps_map_${mapId}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-}
-
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text)
     .then(() => alert('Copied to clipboard!'))
@@ -1161,62 +700,6 @@ function copyToClipboard(text) {
 
 function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function formatGcpsAsPlainText(gcps, imageHeight) {
-  // GDAL format: resourceX resourceY geoX geoY (space-separated)
-  // This is the default format Allmaps uses, with resource origin at top-left, Y-axis pointing down
-  return gcps.map(gcp => {
-    const a = gcp.attributes;
-    return `${a.x} ${a.y} ${a.lon} ${a.lat}`;
-  }).join('\n');
-}
-
-function copyMaskFormat(format) {
-  const textarea = document.getElementById(`mask-${format}`);
-  if (textarea) {
-    navigator.clipboard.writeText(textarea.value)
-      .then(() => alert('Mask copied to clipboard!'))
-      .catch(err => alert('Failed to copy: ' + err));
-  }
-}
-
-function copyGcpsFormat() {
-  const textarea = document.getElementById('gcps-plain');
-  if (textarea) {
-    navigator.clipboard.writeText(textarea.value)
-      .then(() => alert('GCPs copied to clipboard!'))
-      .catch(err => alert('Failed to copy: ' + err));
-  }
-}
-
-async function copyAnnotation(mapId) {
-  const annotationUrl = `${window.location.origin}/mapwarper/maps/${mapId}/annotation.json`;
-  try {
-    const response = await fetch(annotationUrl);
-    const annotation = await response.json();
-    await navigator.clipboard.writeText(JSON.stringify(annotation, null, 2));
-    alert('Annotation copied to clipboard!');
-  } catch (err) {
-    alert('Failed to copy: ' + err);
-  }
-}
-
-async function downloadAnnotation(mapId) {
-  const annotationUrl = `${window.location.origin}/mapwarper/maps/${mapId}/annotation.json`;
-  try {
-    const response = await fetch(annotationUrl);
-    const annotation = await response.json();
-    const blob = new Blob([JSON.stringify(annotation, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mapwarper-${mapId}-annotation.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    alert('Failed to download: ' + err);
-  }
 }
 
 // Navigation
@@ -1247,6 +730,252 @@ function showLoadingBar() {
 
 function hideLoadingBar() {
   elements.loadingBar.classList.add('hidden');
+}
+
+// Generate MW viewer URL by fetching GCPs and mask, then creating annotation
+async function generateMwViewerUrl(mapId, iiifUrl) {
+  const urlSpan = document.getElementById(`mw-viewer-url-${mapId}`);
+  urlSpan.textContent = 'Loading...';
+  
+  try {
+    // Fetch GCPs and image info
+    const [gcpsRes, infoRes, maskRes] = await Promise.all([
+      fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
+      fetch(`${iiifUrl}/info.json`),
+      fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`)
+    ]);
+    
+    if (!gcpsRes.ok) throw new Error('Failed to fetch GCPs');
+    if (!infoRes.ok) throw new Error('Failed to fetch IIIF info');
+    
+    const gcpsData = await gcpsRes.json();
+    const iiifInfo = await infoRes.json();
+    const gcps = gcpsData.data || [];
+    
+    if (gcps.length === 0) {
+      urlSpan.textContent = 'No GCPs';
+      return;
+    }
+    
+    // Get mask coords (use image perimeter if no mask)
+    let maskCoords;
+    if (maskRes.ok) {
+      const maskData = await maskRes.json();
+      maskCoords = maskData.coordinates || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+    } else {
+      maskCoords = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+    }
+    
+    // Build GeoreferencedMap object for @allmaps/annotation
+    const georeferencedMap = {
+      type: 'GeoreferencedMap',
+      resource: {
+        id: iiifUrl,
+        type: 'ImageService2',
+        width: iiifInfo.width,
+        height: iiifInfo.height
+      },
+      gcps: gcps.map(gcp => ({
+        resource: [parseFloat(gcp.attributes.x), parseFloat(gcp.attributes.y)],
+        geo: [parseFloat(gcp.attributes.lon), parseFloat(gcp.attributes.lat)]
+      })),
+      resourceMask: maskCoords
+    };
+    
+    const annotation = generateAnnotation(georeferencedMap);
+    const jsonStr = JSON.stringify(annotation, null, 0);
+    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
+    
+    // Check if URL is too long
+    if (viewerUrl.length > 8000) {
+      urlSpan.innerHTML = `<span style="color:#e67e22;">URL too long</span> 
+        <button class="btn-link" onclick="copyMapAnnotation('${mapId}')">Copy JSON</button>`;
+      window._mapAnnotations = window._mapAnnotations || {};
+      window._mapAnnotations[mapId] = jsonStr;
+    } else {
+      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗</a>`;
+    }
+  } catch (err) {
+    urlSpan.textContent = 'Error';
+    console.error('Failed to generate MW viewer URL:', err);
+  }
+}
+
+// Generate mosaic viewer URL by fetching GCPs and mask for all maps
+async function generateMosaicViewerUrl(layerId, mapIdsStr) {
+  const urlSpan = document.getElementById(`mosaic-viewer-url-${layerId}`);
+  urlSpan.textContent = 'Loading...';
+  
+  const mapIds = mapIdsStr.split(',').filter(id => id);
+  const chunkSize = 20;
+  
+  try {
+    // Helper to fetch data for a single map
+    const fetchMapData = async (mapId) => {
+      const iiifUrl = getMapIiifUrl(mapId);
+      const [gcpsRes, infoRes, maskRes] = await Promise.all([
+        fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
+        fetch(`${iiifUrl}/info.json`),
+        fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`)
+      ]);
+      
+      if (!gcpsRes.ok || !infoRes.ok) return null;
+      
+      const gcpsData = await gcpsRes.json();
+      const iiifInfo = await infoRes.json();
+      const gcps = gcpsData.data || [];
+      
+      if (gcps.length === 0) return null;
+      
+      // Get mask coords (use image perimeter if no mask)
+      let maskCoords;
+      if (maskRes.ok) {
+        const maskData = await maskRes.json();
+        maskCoords = maskData.coordinates || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+      } else {
+        maskCoords = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+      }
+      
+      return {
+        type: 'GeoreferencedMap',
+        resource: {
+          id: iiifUrl,
+          type: 'ImageService2',
+          width: iiifInfo.width,
+          height: iiifInfo.height
+        },
+        gcps: gcps.map(gcp => ({
+          resource: [parseFloat(gcp.attributes.x), parseFloat(gcp.attributes.y)],
+          geo: [parseFloat(gcp.attributes.lon), parseFloat(gcp.attributes.lat)]
+        })),
+        resourceMask: maskCoords
+      };
+    };
+    
+    // Process in chunks of 20
+    const georeferencedMaps = [];
+    for (let i = 0; i < mapIds.length; i += chunkSize) {
+      const chunk = mapIds.slice(i, i + chunkSize);
+      urlSpan.textContent = `Loading... (${i}/${mapIds.length})`;
+      const chunkResults = await Promise.all(chunk.map(fetchMapData));
+      georeferencedMaps.push(...chunkResults.filter(m => m));
+    }
+    
+    if (georeferencedMaps.length === 0) {
+      urlSpan.textContent = 'No GCPs';
+      return;
+    }
+    
+    const annotation = generateAnnotation(georeferencedMaps);
+    const jsonStr = JSON.stringify(annotation, null, 0);
+    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
+    
+    // Check if URL is too long (browsers typically limit to ~2000-8000 chars)
+    if (viewerUrl.length > 8000) {
+      urlSpan.innerHTML = `<span style="color:#e67e22;">${georeferencedMaps.length} maps - URL too long</span> 
+        <button class="btn-link" onclick="copyMosaicAnnotation('${layerId}')">Copy JSON</button>`;
+      // Store annotation for copy
+      window._mosaicAnnotations = window._mosaicAnnotations || {};
+      window._mosaicAnnotations[layerId] = jsonStr;
+    } else {
+      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗ (${georeferencedMaps.length} maps)</a>`;
+    }
+  } catch (err) {
+    urlSpan.textContent = 'Error';
+    console.error('Failed to generate mosaic viewer URL:', err);
+  }
+}
+
+// Copy map annotation JSON to clipboard
+function copyMapAnnotation(mapId) {
+  const jsonStr = window._mapAnnotations?.[mapId];
+  if (jsonStr) {
+    navigator.clipboard.writeText(jsonStr).then(() => {
+      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
+    });
+  }
+}
+
+// Copy mosaic annotation JSON to clipboard
+function copyMosaicAnnotation(layerId) {
+  const jsonStr = window._mosaicAnnotations?.[layerId];
+  if (jsonStr) {
+    navigator.clipboard.writeText(jsonStr).then(() => {
+      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
+    });
+  }
+}
+
+// Generate Allmaps mosaic viewer URL by fetching annotations from Allmaps
+async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
+  const urlSpan = document.getElementById(`allmaps-mosaic-viewer-url-${layerId}`);
+  urlSpan.textContent = 'Loading...';
+  
+  const mapIds = mapIdsStr.split(',').filter(id => id);
+  const chunkSize = 20;
+  
+  try {
+    // Helper to fetch annotation for a single map from Allmaps
+    const fetchMapAnnotation = async (mapId) => {
+      const iiifUrl = getMapIiifUrl(mapId);
+      const annotationUrl = `${CONFIG.allmapsAnnotationsUrl}/maps/${encodeURIComponent(iiifUrl)}`;
+      
+      try {
+        const res = await fetch(annotationUrl);
+        if (!res.ok) return null;
+        const annotation = await res.json();
+        // Parse the annotation to get GeoreferencedMap(s)
+        const { parseAnnotation } = await import('https://esm.sh/@allmaps/annotation@1.0.0-beta.36');
+        const maps = parseAnnotation(annotation);
+        return Array.isArray(maps) ? maps : [maps];
+      } catch {
+        return null;
+      }
+    };
+    
+    // Process in chunks of 20
+    const allGeoreferencedMaps = [];
+    for (let i = 0; i < mapIds.length; i += chunkSize) {
+      const chunk = mapIds.slice(i, i + chunkSize);
+      urlSpan.textContent = `Loading... (${i}/${mapIds.length})`;
+      const chunkResults = await Promise.all(chunk.map(fetchMapAnnotation));
+      for (const maps of chunkResults) {
+        if (maps) allGeoreferencedMaps.push(...maps);
+      }
+    }
+    
+    if (allGeoreferencedMaps.length === 0) {
+      urlSpan.textContent = 'No annotations';
+      return;
+    }
+    
+    const annotation = generateAnnotation(allGeoreferencedMaps);
+    const jsonStr = JSON.stringify(annotation, null, 0);
+    const viewerUrl = `https://viewer.allmaps.org/?data=${encodeURIComponent(jsonStr)}`;
+    
+    // Check if URL is too long
+    if (viewerUrl.length > 8000) {
+      urlSpan.innerHTML = `<span style="color:#e67e22;">${allGeoreferencedMaps.length} maps - URL too long</span> 
+        <button class="btn-link" onclick="copyAllmapsMosaicAnnotation('${layerId}')">Copy JSON</button>`;
+      window._allmapsMosaicAnnotations = window._allmapsMosaicAnnotations || {};
+      window._allmapsMosaicAnnotations[layerId] = jsonStr;
+    } else {
+      urlSpan.innerHTML = `<a href="${viewerUrl}" target="_blank">Open ↗ (${allGeoreferencedMaps.length} maps)</a>`;
+    }
+  } catch (err) {
+    urlSpan.textContent = 'Error';
+    console.error('Failed to generate Allmaps mosaic viewer URL:', err);
+  }
+}
+
+// Copy Allmaps mosaic annotation JSON to clipboard
+function copyAllmapsMosaicAnnotation(layerId) {
+  const jsonStr = window._allmapsMosaicAnnotations?.[layerId];
+  if (jsonStr) {
+    navigator.clipboard.writeText(jsonStr).then(() => {
+      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
+    });
+  }
 }
 
 // Toggle metadata and load if first time
@@ -1337,3 +1066,14 @@ async function toggleMosaicMetadata(layerId) {
     arrow.textContent = '▼';
   }
 }
+
+// Expose functions for onclick handlers
+window.toggleMetadata = toggleMetadata;
+window.toggleMosaicMetadata = toggleMosaicMetadata;
+window.generateMwViewerUrl = generateMwViewerUrl;
+window.generateMosaicViewerUrl = generateMosaicViewerUrl;
+window.generateAllmapsMosaicViewerUrl = generateAllmapsMosaicViewerUrl;
+window.copyMapAnnotation = copyMapAnnotation;
+window.copyMosaicAnnotation = copyMosaicAnnotation;
+window.copyAllmapsMosaicAnnotation = copyAllmapsMosaicAnnotation;
+window.copyToClipboard = copyToClipboard;

@@ -232,6 +232,48 @@ main {
   background: #fafafa;
 }
 
+.card-links {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.card-links a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+.card-links a:hover {
+  text-decoration: underline;
+}
+
+.card-links .btn-link {
+  background: none;
+  border: 1px solid #3498db;
+  color: #3498db;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.card-links .btn-link:hover {
+  background: #e8f4fc;
+}
+
+.card-links .generated-url {
+  font-size: 0.7rem;
+  color: #666;
+}
+
+.card-links .generated-url a {
+  color: #27ae60;
+  font-weight: 500;
+}
+
 .card-metadata-toggle {
   width: 100%;
   padding: 0.5rem;

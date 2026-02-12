@@ -5,7 +5,6 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { generateAnnotation } from "@allmaps/annotation";
 import { processImageRequest, getMapInfoForIIIF, getLayerInfo, getMapGCPs, getMapMask, MapNotFoundError, LayerNotFoundError } from "./iiif.js";
 
 type Bindings = {
@@ -190,60 +189,6 @@ app.get("/mapwarper/maps/:identifier/iiif/manifest.json", async (c) => {
       return c.json({ error: error.message }, 404);
     }
     console.error("Error generating manifest:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-// Allmaps georeferencing annotation endpoint
-app.get("/mapwarper/maps/:identifier/annotation.json", async (c) => {
-  const identifier = c.req.param("identifier");
-  const baseUrl = new URL(c.req.url).origin;
-  const iiifBase = `${baseUrl}/mapwarper/maps/${identifier}/iiif`;
-
-   try {
-    // Fetch map info, GCPs, and mask in parallel
-    const [mapInfo, gcps, maskCoords] = await Promise.all([
-      getMapInfoForIIIF(identifier),
-      getMapGCPs(identifier),
-      getMapMask(identifier),
-    ]);
-
-    if (gcps.length === 0) {
-      return c.json({ error: "No GCPs found for this map" }, 404);
-    }
-
-    const height = mapInfo.height;
-    
-    // Build GeoreferencedMap for @allmaps/annotation
-    const georeferencedMap = {
-      type: "GeoreferencedMap" as const,
-      "@context": "https://schemas.allmaps.org/map/2/context.json" as const,
-      resource: {
-        id: iiifBase,
-        type: "ImageService3" as const,
-        width: mapInfo.width,
-        height: height,
-      },
-      gcps: gcps.map(gcp => ({
-        resource: [gcp.x, gcp.y] as [number, number],
-        geo: [gcp.lon, gcp.lat] as [number, number],
-      })),
-      resourceMask: maskCoords && maskCoords.length >= 3
-        ? maskCoords.map(([x, y]) => [x, height - y] as [number, number])
-        : [[0, 0], [mapInfo.width, 0], [mapInfo.width, height], [0, height]] as [number, number][],
-    };
-
-    const annotation = generateAnnotation(georeferencedMap);
-
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("Cache-Control", "no-cache");
-    return c.json(annotation);
-  } catch (error) {
-    if (error instanceof MapNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error generating annotation:", error);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
