@@ -27,7 +27,7 @@ export function getAllmapsViewerUrl(iiifUrl) {
 }
 
 export function getAllmapsAnnotationUrl(iiifUrl) {
-  return `${CONFIG.allmapsAnnotationsUrl}/maps/${encodeURIComponent(iiifUrl)}`;
+  return `${CONFIG.allmapsAnnotationsUrl}/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
 }
 
 // Parse GCPs from Allmaps annotation
