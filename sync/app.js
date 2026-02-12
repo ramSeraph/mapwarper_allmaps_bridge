@@ -4,17 +4,7 @@
  */
 
 import { generateAnnotation } from 'https://esm.sh/@allmaps/annotation@1.0.0-beta.36';
-
-const CONFIG = {
-  mapwarperBaseUrl: 'https://mapwarper.net',
-  allmapsAnnotationsUrl: 'https://annotations.allmaps.org',
-  perPage: 20,
-};
-
-// Generate IIIF URL for a map
-function getMapIiifUrl(mapId) {
-  return `${window.location.origin}/mapwarper/maps/${mapId}/iiif`;
-}
+import { CONFIG, getMapIiifUrl, copyToClipboard } from './common.js';
 
 // URL params sync
 function getUrlParams() {
@@ -349,71 +339,6 @@ async function fetchMapWarperLayers(page = 1) {
   return response.json();
 }
 
-async function fetchMapWarperGCPs(mapId) {
-  const response = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`);
-  if (!response.ok) {
-    if (response.status === 404) return { data: [] };
-    throw new Error('Failed to fetch GCPs');
-  }
-  return response.json();
-}
-
-async function fetchMapWarperMask(mapId) {
-  // Fetch the mask through our proxy (avoids CORS issues)
-  const response = await fetch(`${window.location.origin}/mapwarper/maps/${mapId}/mask.json`);
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    throw new Error('Failed to fetch mask');
-  }
-  const data = await response.json();
-  return data.coords || null;
-}
-
-function parseGmlMask(gmlText) {
-  // Parse GML coordinates from format like: "x1,y1 x2,y2 x3,y3"
-  const coordsMatch = gmlText.match(/<gml:coordinates[^>]*>([^<]+)<\/gml:coordinates>/);
-  if (!coordsMatch) return null;
-  
-  const coordsStr = coordsMatch[1].trim();
-  const pairs = coordsStr.split(/\s+/).map(pair => {
-    const [x, y] = pair.split(',').map(Number);
-    return [x, y];
-  });
-  
-  // Remove last point if it's the same as first (closed polygon)
-  if (pairs.length > 1 && 
-      pairs[0][0] === pairs[pairs.length - 1][0] && 
-      pairs[0][1] === pairs[pairs.length - 1][1]) {
-    pairs.pop();
-  }
-  
-  return pairs;
-}
-
-function formatMaskAsPlainText(coords) {
-  return coords.map(([x, y]) => `${x},${y}`).join('\n');
-}
-
-async function generateAllmapsId(iiifUrl) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(iiifUrl);
-  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex.substring(0, 16);
-}
-
-async function fetchAllmapsAnnotation(iiifUrl) {
-  // Use URL-based lookup which redirects to the correct annotation
-  const infoJsonUrl = iiifUrl.endsWith('/info.json') ? iiifUrl : `${iiifUrl}/info.json`;
-  const response = await fetch(`${CONFIG.allmapsAnnotationsUrl}/?url=${encodeURIComponent(infoJsonUrl)}`);
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    throw new Error('Failed to fetch Allmaps annotation');
-  }
-  return response.json();
-}
-
 // Load functions
 async function loadMaps() {
   showLoadingBar();
@@ -680,28 +605,6 @@ function renderPagination(container, meta, type) {
   container.innerHTML = html;
 }
 
-function renderStatusBadge(status) {
-  const badges = {
-    'none': '<span class="status-badge status-none">No georeferencing</span>',
-    'mapwarper-only': '<span class="status-badge status-mapwarper-only">MapWarper only</span>',
-    'allmaps-only': '<span class="status-badge status-allmaps-only">Allmaps only</span>',
-    'match': '<span class="status-badge status-match">✓ Synced</span>',
-    'mismatch': '<span class="status-badge status-mismatch">⚠ Mismatch</span>',
-  };
-  return badges[status.type] || '';
-}
-
-// Status fetching
-function copyToClipboard(text) {
-  navigator.clipboard.writeText(text)
-    .then(() => alert('Copied to clipboard!'))
-    .catch(err => alert('Failed to copy: ' + err));
-}
-
-function escapeHtml(text) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // Navigation
 function goToPage(page, type) {
   if (type === 'maps') {
@@ -789,7 +692,7 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
     // Check if URL is too long
     if (viewerUrl.length > 8000) {
       urlSpan.innerHTML = `<span style="color:#e67e22;">URL too long</span> 
-        <button class="btn-link" onclick="copyMapAnnotation('${mapId}')">Copy JSON</button>`;
+        <button class="btn-link" onclick="copyAnnotationJson('_mapAnnotations', '${mapId}')">Copy JSON</button>`;
       window._mapAnnotations = window._mapAnnotations || {};
       window._mapAnnotations[mapId] = jsonStr;
     } else {
@@ -873,7 +776,7 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
     // Check if URL is too long (browsers typically limit to ~2000-8000 chars)
     if (viewerUrl.length > 8000) {
       urlSpan.innerHTML = `<span style="color:#e67e22;">${georeferencedMaps.length} maps - URL too long</span> 
-        <button class="btn-link" onclick="copyMosaicAnnotation('${layerId}')">Copy JSON</button>`;
+        <button class="btn-link" onclick="copyAnnotationJson('_mosaicAnnotations', '${layerId}')">Copy JSON</button>`;
       // Store annotation for copy
       window._mosaicAnnotations = window._mosaicAnnotations || {};
       window._mosaicAnnotations[layerId] = jsonStr;
@@ -886,19 +789,9 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
   }
 }
 
-// Copy map annotation JSON to clipboard
-function copyMapAnnotation(mapId) {
-  const jsonStr = window._mapAnnotations?.[mapId];
-  if (jsonStr) {
-    navigator.clipboard.writeText(jsonStr).then(() => {
-      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
-    });
-  }
-}
-
-// Copy mosaic annotation JSON to clipboard
-function copyMosaicAnnotation(layerId) {
-  const jsonStr = window._mosaicAnnotations?.[layerId];
+// Copy annotation JSON to clipboard (generic for maps and mosaics)
+function copyAnnotationJson(store, id) {
+  const jsonStr = window[store]?.[id];
   if (jsonStr) {
     navigator.clipboard.writeText(jsonStr).then(() => {
       alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
@@ -956,7 +849,7 @@ async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
     // Check if URL is too long
     if (viewerUrl.length > 8000) {
       urlSpan.innerHTML = `<span style="color:#e67e22;">${allGeoreferencedMaps.length} maps - URL too long</span> 
-        <button class="btn-link" onclick="copyAllmapsMosaicAnnotation('${layerId}')">Copy JSON</button>`;
+        <button class="btn-link" onclick="copyAnnotationJson('_allmapsMosaicAnnotations', '${layerId}')">Copy JSON</button>`;
       window._allmapsMosaicAnnotations = window._allmapsMosaicAnnotations || {};
       window._allmapsMosaicAnnotations[layerId] = jsonStr;
     } else {
@@ -965,16 +858,6 @@ async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
   } catch (err) {
     urlSpan.textContent = 'Error';
     console.error('Failed to generate Allmaps mosaic viewer URL:', err);
-  }
-}
-
-// Copy Allmaps mosaic annotation JSON to clipboard
-function copyAllmapsMosaicAnnotation(layerId) {
-  const jsonStr = window._allmapsMosaicAnnotations?.[layerId];
-  if (jsonStr) {
-    navigator.clipboard.writeText(jsonStr).then(() => {
-      alert('Annotation JSON copied! Paste it in Allmaps Viewer using the data input.');
-    });
   }
 }
 
@@ -1073,7 +956,5 @@ window.toggleMosaicMetadata = toggleMosaicMetadata;
 window.generateMwViewerUrl = generateMwViewerUrl;
 window.generateMosaicViewerUrl = generateMosaicViewerUrl;
 window.generateAllmapsMosaicViewerUrl = generateAllmapsMosaicViewerUrl;
-window.copyMapAnnotation = copyMapAnnotation;
-window.copyMosaicAnnotation = copyMosaicAnnotation;
-window.copyAllmapsMosaicAnnotation = copyAllmapsMosaicAnnotation;
+window.copyAnnotationJson = copyAnnotationJson;
 window.copyToClipboard = copyToClipboard;

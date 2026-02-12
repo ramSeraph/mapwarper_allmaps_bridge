@@ -3,7 +3,7 @@
  * Fetches map metadata from the MapWarper API
  */
 
-import { MapWarperApiResponse, MapWarperLayerApiResponse, MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError, GCP, GcpApiItem } from "./types.js";
+import { MapWarperApiResponse, MapWarperLayerApiResponse, MapInfo, LayerInfo, MapNotFoundError, LayerNotFoundError } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://mapwarper.net";
 
@@ -76,34 +76,6 @@ export class MapWarperClient {
       description: data.data.attributes.description,
       mapIds: data.data.relationships.maps.data.map(m => m.id),
     };
-  }
-
-  /**
-   * Fetch GCPs for a map
-   */
-  async getGCPs(id: string): Promise<GCP[]> {
-    const url = `${this.baseUrl}/api/v1/maps/${id}/gcps`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return [];
-      }
-      throw new Error(`MapWarper API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json() as { data?: GcpApiItem[] };
-    return (data.data || []).map((gcp: GcpApiItem) => ({
-      x: gcp.attributes.x,
-      y: gcp.attributes.y,
-      lat: parseFloat(gcp.attributes.lat),
-      lon: parseFloat(gcp.attributes.lon),
-    }));
   }
 
   /**
