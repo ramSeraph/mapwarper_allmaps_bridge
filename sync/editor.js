@@ -2,7 +2,7 @@
  * Editor page for MapWarper ↔ Allmaps sync
  */
 
-import { CONFIG, getMapIiifUrl, parseAllmapsGcps, parseAllmapsMask, compareGcps, compareMasks } from './common.js';
+import { CONFIG, getMapIiifUrl, parseAllmapsGcps, parseAllmapsMask, compareGcps, compareMasks, getMwWarpUrl, getAllmapsEditorUrl } from './common.js';
 
 const params = new URLSearchParams(window.location.search);
 const mapId = params.get('map');
@@ -71,14 +71,14 @@ function updateStatusAndControls(data, mode, updateContent = true) {
     updateSyncStatus(mwGcps.length, allmapsGcps.length, gcpsMatch, masksMatch, hasMwMask);
     updateAllmapsControls(mwGcps, maskCoords, iiifInfo.height, gcpsMatch, masksMatch);
     if (updateContent) {
-      const editorUrl = `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+      const editorUrl = getAllmapsEditorUrl(iiifUrl);
       contentEl.innerHTML = `<iframe class="editor-frame" src="${editorUrl}" allow="fullscreen"></iframe>`;
     }
   } else {
     updateMapwarperSyncStatus(allmapsGcps.length, gcpsMatch);
     updateMapwarperControls(allmapsGcps, gcpsMatch);
     if (updateContent) {
-      const editorUrl = `${CONFIG.mapwarperBaseUrl}/maps/${mapId}/warp`;
+      const editorUrl = getMwWarpUrl(mapId);
       contentEl.innerHTML = `
         <div class="center-content">
           <p style="color:#666;margin-bottom:0.5rem;">MapWarper cannot be embedded due to security restrictions.</p>

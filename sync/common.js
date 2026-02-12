@@ -13,6 +13,23 @@ export function getMapIiifUrl(mapId) {
   return `${window.location.origin}/mapwarper/maps/${mapId}/iiif`;
 }
 
+// URL builders for external services
+export function getMwWarpUrl(mapId) {
+  return `${CONFIG.mapwarperBaseUrl}/maps/${mapId}/warp`;
+}
+
+export function getAllmapsEditorUrl(iiifUrl) {
+  return `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+}
+
+export function getAllmapsViewerUrl(iiifUrl) {
+  return `https://viewer.allmaps.org/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+}
+
+export function getAllmapsAnnotationUrl(iiifUrl) {
+  return `${CONFIG.allmapsAnnotationsUrl}/maps/${encodeURIComponent(iiifUrl)}`;
+}
+
 // Parse GCPs from Allmaps annotation
 export function parseAllmapsGcps(annotation) {
   let gcps = [];

@@ -4,7 +4,7 @@
  */
 
 import { generateAnnotation } from 'https://esm.sh/@allmaps/annotation@1.0.0-beta.36';
-import { CONFIG, getMapIiifUrl, copyToClipboard } from './common.js';
+import { CONFIG, getMapIiifUrl, copyToClipboard, getMwWarpUrl, getAllmapsEditorUrl, getAllmapsViewerUrl, getAllmapsAnnotationUrl } from './common.js';
 
 // URL params sync
 function getUrlParams() {
@@ -492,15 +492,15 @@ function renderMapCard(map) {
   } else if (!thumbUrl) {
     thumbUrl = `${CONFIG.mapwarperBaseUrl}/maps/thumb/${map.id}`;
   }
-  const iiifUrl = `${getMapIiifUrl(map.id)}`;
+  const iiifUrl = getMapIiifUrl(map.id);
   const editorAllmapsUrl = `editor.html?map=${map.id}&mode=allmaps`;
   const editorMapwarperUrl = `editor.html?map=${map.id}&mode=mapwarper`;
   const shareUrl = `${window.location.origin}${window.location.pathname}?q=${map.id}`;
   
   // Links
-  const mwWarpUrl = `${CONFIG.mapwarperBaseUrl}/maps/${map.id}/warp`;
-  const allmapsEditorUrl = `https://editor.allmaps.org/#/georeference?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
-  const allmapsViewerUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
+  const mwWarpUrl = getMwWarpUrl(map.id);
+  const allmapsEditorUrl = getAllmapsEditorUrl(iiifUrl);
+  const allmapsViewerUrl = getAllmapsViewerUrl(iiifUrl);
   
   return `
     <div class="card" data-id="${map.id}" data-type="map">
@@ -811,7 +811,7 @@ async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
     // Helper to fetch annotation for a single map from Allmaps
     const fetchMapAnnotation = async (mapId) => {
       const iiifUrl = getMapIiifUrl(mapId);
-      const annotationUrl = `${CONFIG.allmapsAnnotationsUrl}/maps/${encodeURIComponent(iiifUrl)}`;
+      const annotationUrl = getAllmapsAnnotationUrl(iiifUrl);
       
       try {
         const res = await fetch(annotationUrl);
@@ -958,3 +958,5 @@ window.generateMosaicViewerUrl = generateMosaicViewerUrl;
 window.generateAllmapsMosaicViewerUrl = generateAllmapsMosaicViewerUrl;
 window.copyAnnotationJson = copyAnnotationJson;
 window.copyToClipboard = copyToClipboard;
+window.goToPage = goToPage;
+window.goToMosaicMapsPage = goToMosaicMapsPage;
