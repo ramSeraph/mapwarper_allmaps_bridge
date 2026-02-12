@@ -36,8 +36,6 @@ The included sync tool helps with bidirectional workflow between MapWarper and A
 | Endpoint | Description |
 |----------|-------------|
 | `GET /mapwarper/mosaic/{layerId}/manifest.json` | IIIF manifest for all maps in layer |
-| `GET /mapwarper/mosaic/{layerId}/annotation.json` | Combined Allmaps annotation from MapWarper GCPs |
-| `GET /allmaps/mosaic/{layerId}/annotation.json` | Combined annotations from Allmaps API |
 
 ## Development
 

@@ -108,6 +108,7 @@ const elements = {
   mapsContent: document.getElementById('maps-content'),
   mosaicsContent: document.getElementById('mosaics-content'),
   loading: document.getElementById('loading'),
+  loadingBar: document.getElementById('loading-bar'),
   rectifiedOnly: document.getElementById('rectified-only'),
   refreshBtn: document.getElementById('refresh-btn'),
   rectifiedFilterContainer: document.getElementById('rectified-filter-container'),
@@ -209,7 +210,7 @@ function setupEventListeners() {
   });
 }
 
-function performSearch() {
+async function performSearch() {
   const query = elements.searchInput.value.trim();
   
   if (state.currentTab === 'maps') {
@@ -229,9 +230,9 @@ function performSearch() {
   updateUrlParams();
   
   if (state.currentTab === 'maps') {
-    loadMaps();
+    await loadMaps();
   } else {
-    loadMosaics();
+    await loadMosaics();
   }
 }
 
@@ -439,7 +440,7 @@ async function fetchAllmapsAnnotation(iiifUrl) {
 
 // Load functions
 async function loadMaps() {
-  showLoading();
+  showLoadingBar();
   try {
     const data = await fetchMapWarperMaps(state.mapsPage);
     state.mapsData = data;
@@ -448,11 +449,11 @@ async function loadMaps() {
     console.error('Error loading maps:', error);
     elements.mapsGrid.innerHTML = `<p class="error">Error loading maps: ${error.message}</p>`;
   }
-  hideLoading();
+  hideLoadingBar();
 }
 
 async function loadMosaics() {
-  showLoading();
+  showLoadingBar();
   try {
     const data = await fetchMapWarperLayers(state.mosaicsPage);
     state.mosaicsData = data;
@@ -461,7 +462,7 @@ async function loadMosaics() {
     console.error('Error loading mosaics:', error);
     elements.mosaicsGrid.innerHTML = `<p class="error">Error loading mosaics: ${error.message}</p>`;
   }
-  hideLoading();
+  hideLoadingBar();
 }
 
 async function loadMosaicDetail(layerId) {
@@ -509,16 +510,6 @@ async function loadMosaicDetail(layerId) {
     // Render mosaic detail
     const thumbUrl = `${CONFIG.mapwarperBaseUrl}/layers/thumb/${layer.id}`;
     const shareUrl = `${window.location.origin}${window.location.pathname}?mosaic=${layer.id}`;
-    // MapWarper georeferencing → Allmaps viewer
-    const mwAnnotationUrl = `${window.location.origin}/mapwarper/mosaic/${layer.id}/annotation.json`;
-    const mwAnnotationUrlRefresh = `${mwAnnotationUrl}?refresh`;
-    const mwViewUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(mwAnnotationUrl)}`;
-    const mwViewUrlRefresh = `https://viewer.allmaps.org/?url=${encodeURIComponent(mwAnnotationUrlRefresh)}`;
-    // Allmaps georeferencing → Allmaps viewer
-    const amAnnotationUrl = `${window.location.origin}/allmaps/mosaic/${layer.id}/annotation.json`;
-    const amAnnotationUrlRefresh = `${amAnnotationUrl}?refresh`;
-    const amViewUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(amAnnotationUrl)}`;
-    const amViewUrlRefresh = `https://viewer.allmaps.org/?url=${encodeURIComponent(amAnnotationUrlRefresh)}`;
     
     detailContainer.innerHTML = `
       <div style="margin-bottom:1rem;">
@@ -538,12 +529,6 @@ async function loadMosaicDetail(layerId) {
                 <div class="card-meta">Maps: ${attrs.maps_count} | Rectified: ${attrs.rectified_percent}%</div>
                 <div class="card-actions" style="margin-top:0.25rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                   <a href="${CONFIG.mapwarperBaseUrl}/layers/${layer.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
-                  <a id="mw-view-detail-${layer.id}" href="${mwViewUrl}" target="_blank" class="btn btn-small" style="background:#9b59b6;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="View MapWarper georeferencing in Allmaps">View MW</a>
-                  <a id="am-view-detail-${layer.id}" href="${amViewUrl}" target="_blank" class="btn btn-small" style="background:#8e44ad;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="View Allmaps georeferencing in Allmaps">View AM</a>
-                  <label style="font-size:0.65rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer;" title="Refresh cached annotation data">
-                    <input type="checkbox" onchange="toggleMosaicRefresh('detail-${layer.id}', '${mwViewUrl}', '${mwViewUrlRefresh}', '${amViewUrl}', '${amViewUrlRefresh}', this.checked)" style="margin:0;">
-                    Refresh
-                  </label>
                 </div>
               </div>
             </div>
@@ -653,16 +638,6 @@ function renderMosaics(data) {
     // Use layer thumb endpoint
     const thumbUrl = `${CONFIG.mapwarperBaseUrl}/layers/thumb/${layer.id}`;
     const shareUrl = `${window.location.origin}${window.location.pathname}?tab=mosaics&q=${layer.id}`;
-    // MapWarper georeferencing → Allmaps viewer
-    const mwAnnotationUrl = `${window.location.origin}/mapwarper/mosaic/${layer.id}/annotation.json`;
-    const mwAnnotationUrlRefresh = `${mwAnnotationUrl}?refresh`;
-    const mwViewUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(mwAnnotationUrl)}`;
-    const mwViewUrlRefresh = `https://viewer.allmaps.org/?url=${encodeURIComponent(mwAnnotationUrlRefresh)}`;
-    // Allmaps georeferencing → Allmaps viewer
-    const amAnnotationUrl = `${window.location.origin}/allmaps/mosaic/${layer.id}/annotation.json`;
-    const amAnnotationUrlRefresh = `${amAnnotationUrl}?refresh`;
-    const amViewUrl = `https://viewer.allmaps.org/?url=${encodeURIComponent(amAnnotationUrl)}`;
-    const amViewUrlRefresh = `https://viewer.allmaps.org/?url=${encodeURIComponent(amAnnotationUrlRefresh)}`;
     
     return `
       <div class="card" data-id="${layer.id}" data-type="mosaic">
@@ -678,12 +653,6 @@ function renderMosaics(data) {
               <div class="card-meta">Maps: ${attrs.maps_count} | Rectified: ${attrs.rectified_percent}%</div>
               <div class="card-actions" style="margin-top:0.25rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                 <a href="${CONFIG.mapwarperBaseUrl}/layers/${layer.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
-                <a id="mw-view-${layer.id}" href="${mwViewUrl}" target="_blank" class="btn btn-small" style="background:#9b59b6;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="View MapWarper georeferencing in Allmaps">View MW</a>
-                <a id="am-view-${layer.id}" href="${amViewUrl}" target="_blank" class="btn btn-small" style="background:#8e44ad;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;" title="View Allmaps georeferencing in Allmaps">View AM</a>
-                <label style="font-size:0.65rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer;" title="Refresh cached annotation data">
-                  <input type="checkbox" onchange="toggleMosaicRefresh('${layer.id}', '${mwViewUrl}', '${mwViewUrlRefresh}', '${amViewUrl}', '${amViewUrlRefresh}', this.checked)" style="margin:0;">
-                  Refresh
-                </label>
               </div>
             </div>
           </div>
@@ -699,13 +668,6 @@ function renderMosaics(data) {
   }).join('');
   
   renderPagination(elements.mosaicsPagination, data.meta, 'mosaics');
-}
-
-function toggleMosaicRefresh(layerId, mwUrl, mwUrlRefresh, amUrl, amUrlRefresh, isChecked) {
-  const mwLink = document.getElementById(`mw-view-${layerId}`);
-  const amLink = document.getElementById(`am-view-${layerId}`);
-  if (mwLink) mwLink.href = isChecked ? mwUrlRefresh : mwUrl;
-  if (amLink) amLink.href = isChecked ? amUrlRefresh : amUrl;
 }
 
 function renderPagination(container, meta, type) {
@@ -785,6 +747,21 @@ async function fetchStatus(mapId, type = 'map') {
     const hasAllmapsGcps = allmapsGcps.length > 0;
     const isSynced = status.synced === true;
     
+    // Compare GCPs only (for Sync to MapWarper button)
+    const gcpsMatch = hasMapwarperGcps && hasAllmapsGcps && compareGcps(mapwarperGcps, allmapsGcps).match;
+    
+    // Compare masks, treating no MapWarper mask as image perimeter
+    const effectiveMwMask = maskCoords || [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+    const masksMatch = hasMapwarperGcps && hasAllmapsGcps && compareMasks(effectiveMwMask, allmapsMask).match;
+    
+    // Button visibility rules:
+    // - Sync to Allmaps: show if MW has GCPs AND (Allmaps empty OR both GCPs and mask match)
+    // - Sync to MapWarper: show if Allmaps has GCPs AND GCPs don't match (mask doesn't matter)
+    // - Compare: show only if both have GCPs and not synced
+    const showSyncToAllmaps = hasMapwarperGcps && (!hasAllmapsGcps || (gcpsMatch && masksMatch));
+    const showSyncToMapwarper = hasAllmapsGcps && !gcpsMatch;
+    const showCompare = hasMapwarperGcps && hasAllmapsGcps && !isSynced;
+    
     let html = `
       <div class="status-info" style="margin-top:0.5rem;">
         <div style="display:flex;justify-content:space-between;gap:0.25rem;margin-bottom:0.5rem;">
@@ -801,12 +778,12 @@ async function fetchStatus(mapId, type = 'map') {
         </div>
         ` : `
         <div class="card-actions" style="justify-content:space-between;">
-          ${hasMapwarperGcps ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToAllmaps('${mapId}')">→ Allmaps</button>` : '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>→ Allmaps</button>'}
-          ${hasAllmapsGcps ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToMapwarper('${mapId}')">MapWarper ←</button>` : '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>MapWarper ←</button>'}
+          ${showSyncToAllmaps ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToAllmaps('${mapId}')">→ Allmaps</button>` : (hasMapwarperGcps ? '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>→ Allmaps</button>' : '')}
+          ${showSyncToMapwarper ? `<button class="btn btn-primary btn-small" style="min-width:90px;" onclick="showSyncToMapwarper('${mapId}')">MapWarper ←</button>` : (hasAllmapsGcps ? '<button class="btn btn-secondary btn-small" style="min-width:90px;" disabled>MapWarper ←</button>' : '')}
         </div>
-        ${hasMapwarperGcps && hasAllmapsGcps ? `
+        ${showCompare ? `
         <div class="card-actions" style="margin-top:0.25rem;">
-          <a href="${getCompareUrl(mapId, iiifUrl)}" target="_blank" class="btn btn-success" style="width:100%;">🔍 Compare</a>
+          <a href="${getCompareUrl(mapId, iiifUrl)}" target="_blank" class="btn btn-success" style="width:100%;padding:0.2rem 0.5rem;text-align:center;">🔍 Compare</a>
         </div>
         ` : ''}
         `}
@@ -1262,6 +1239,14 @@ function showLoading() {
 
 function hideLoading() {
   elements.loading.classList.add('hidden');
+}
+
+function showLoadingBar() {
+  elements.loadingBar.classList.remove('hidden');
+}
+
+function hideLoadingBar() {
+  elements.loadingBar.classList.add('hidden');
 }
 
 // Toggle metadata and load if first time

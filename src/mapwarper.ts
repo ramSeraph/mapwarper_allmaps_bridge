@@ -97,7 +97,7 @@ export class MapWarperClient {
       throw new Error(`MapWarper API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as { data?: GcpApiItem[] };
     interface GcpApiItem {
       attributes: {
         x: number;

@@ -198,8 +198,8 @@ export async function getMapInfoForIIIF(identifier: string): Promise<MapInfo> {
 /**
  * Get layer info for mosaic manifest generation
  */
-export async function getLayerInfo(identifier: string): Promise<LayerInfo> {
-  if (layerCache.has(identifier)) {
+export async function getLayerInfo(identifier: string, skipCache = false): Promise<LayerInfo> {
+  if (!skipCache && layerCache.has(identifier)) {
     return layerCache.get(identifier)!;
   }
   const layerInfo = await client.getLayer(identifier);

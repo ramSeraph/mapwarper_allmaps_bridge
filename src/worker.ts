@@ -200,7 +200,7 @@ app.get("/mapwarper/maps/:identifier/annotation.json", async (c) => {
   const baseUrl = new URL(c.req.url).origin;
   const iiifBase = `${baseUrl}/mapwarper/maps/${identifier}/iiif`;
 
-  try {
+   try {
     // Fetch map info, GCPs, and mask in parallel
     const [mapInfo, gcps, maskCoords] = await Promise.all([
       getMapInfoForIIIF(identifier),
@@ -212,6 +212,8 @@ app.get("/mapwarper/maps/:identifier/annotation.json", async (c) => {
       return c.json({ error: "No GCPs found for this map" }, 404);
     }
 
+    const height = mapInfo.height;
+    
     // Build GeoreferencedMap for @allmaps/annotation
     const georeferencedMap = {
       type: "GeoreferencedMap" as const,
@@ -220,15 +222,15 @@ app.get("/mapwarper/maps/:identifier/annotation.json", async (c) => {
         id: iiifBase,
         type: "ImageService3" as const,
         width: mapInfo.width,
-        height: mapInfo.height,
+        height: height,
       },
       gcps: gcps.map(gcp => ({
         resource: [gcp.x, gcp.y] as [number, number],
         geo: [gcp.lon, gcp.lat] as [number, number],
       })),
-      resourceMask: maskCoords && maskCoords.length > 0
-        ? maskCoords.map(([x, y]) => [x, y] as [number, number])
-        : [[0, 0], [mapInfo.width, 0], [mapInfo.width, mapInfo.height], [0, mapInfo.height]] as [number, number][],
+      resourceMask: maskCoords && maskCoords.length >= 3
+        ? maskCoords.map(([x, y]) => [x, height - y] as [number, number])
+        : [[0, 0], [mapInfo.width, 0], [mapInfo.width, height], [0, height]] as [number, number][],
     };
 
     const annotation = generateAnnotation(georeferencedMap);
@@ -264,198 +266,6 @@ app.get("/mapwarper/maps/:identifier/mask.json", async (c) => {
     }
     console.error("Mask error:", error);
     return c.json({ error: "Failed to fetch mask" }, 500);
-  }
-});
-
-// Allmaps georeferencing annotation endpoint for mosaics (combines all rectified maps)
-// Uses in-memory cache; add ?refresh to bypass
-const mosaicAnnotationCache = new Map<string, { data: unknown; timestamp: number }>();
-const MOSAIC_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const MOSAIC_CONCURRENCY_LIMIT = 5; // Max concurrent map fetches
-
-// Process items with concurrency limit
-async function processWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = [];
-  const executing: Promise<void>[] = [];
-  
-  for (const item of items) {
-    const p = fn(item).then((result) => {
-      results.push(result);
-    });
-    executing.push(p);
-    
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-      // Remove completed promises
-      for (let i = executing.length - 1; i >= 0; i--) {
-        const status = await Promise.race([executing[i], Promise.resolve("pending")]);
-        if (status !== "pending") executing.splice(i, 1);
-      }
-    }
-  }
-  
-  await Promise.all(executing);
-  return results;
-}
-
-app.get("/mapwarper/mosaic/:identifier/annotation.json", async (c) => {
-  const identifier = c.req.param("identifier");
-  const baseUrl = new URL(c.req.url).origin;
-  const refresh = c.req.query("refresh") !== undefined;
-
-  // Check cache unless refresh requested
-  const cacheKey = `${identifier}:${baseUrl}`;
-  if (!refresh) {
-    const cached = mosaicAnnotationCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < MOSAIC_CACHE_TTL) {
-      c.header("Content-Type", "application/ld+json");
-      c.header("Access-Control-Allow-Origin", "*");
-      c.header("X-Cache", "HIT");
-      return c.json(cached.data);
-    }
-  }
-
-  try {
-    const layerInfo = await getLayerInfo(identifier);
-    
-    // Fetch map data with concurrency limit to avoid overwhelming server
-    const mapDataResults = await processWithConcurrency(
-      layerInfo.mapIds,
-      MOSAIC_CONCURRENCY_LIMIT,
-      async (mapId) => {
-        try {
-          const [mapInfo, gcps, maskCoords] = await Promise.all([
-            getMapInfoForIIIF(mapId),
-            getMapGCPs(mapId),
-            getMapMask(mapId),
-          ]);
-          return { mapId, mapInfo, gcps, maskCoords };
-        } catch {
-          return null;
-        }
-      }
-    );
-    
-    // Filter to only maps with GCPs (georeferenced in MapWarper)
-    const georeferencedMaps = mapDataResults
-      .filter((data): data is NonNullable<typeof data> => data !== null && data.gcps.length > 0)
-      .map((data) => {
-        const iiifBase = `${baseUrl}/mapwarper/maps/${data.mapId}/iiif`;
-        return {
-          type: "GeoreferencedMap" as const,
-          "@context": "https://schemas.allmaps.org/map/2/context.json" as const,
-          resource: {
-            id: iiifBase,
-            type: "ImageService3" as const,
-            width: data.mapInfo.width,
-            height: data.mapInfo.height,
-          },
-          gcps: data.gcps.map(gcp => ({
-            resource: [gcp.x, gcp.y] as [number, number],
-            geo: [gcp.lon, gcp.lat] as [number, number],
-          })),
-          resourceMask: data.maskCoords && data.maskCoords.length > 0
-            ? data.maskCoords.map(([x, y]) => [x, y] as [number, number])
-            : [[0, 0], [data.mapInfo.width, 0], [data.mapInfo.width, data.mapInfo.height], [0, data.mapInfo.height]] as [number, number][],
-        };
-      });
-
-    if (georeferencedMaps.length === 0) {
-      return c.json({ error: "No georeferenced maps found in this mosaic" }, 404);
-    }
-
-    // Generate AnnotationPage with all georeferenced maps
-    const annotation = generateAnnotation(georeferencedMaps);
-
-    // Cache the result
-    mosaicAnnotationCache.set(cacheKey, { data: annotation, timestamp: Date.now() });
-
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("X-Cache", "MISS");
-    return c.json(annotation);
-  } catch (error) {
-    if (error instanceof LayerNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error generating mosaic annotation:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-// Allmaps mosaic annotation endpoint (combines annotations FROM Allmaps for each map)
-const allmapsMosaicCache = new Map<string, { data: unknown; timestamp: number }>();
-
-app.get("/allmaps/mosaic/:identifier/annotation.json", async (c) => {
-  const identifier = c.req.param("identifier");
-  const baseUrl = new URL(c.req.url).origin;
-  const refresh = c.req.query("refresh") !== undefined;
-
-  const cacheKey = `allmaps:${identifier}`;
-  if (!refresh) {
-    const cached = allmapsMosaicCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < MOSAIC_CACHE_TTL) {
-      c.header("Content-Type", "application/ld+json");
-      c.header("Access-Control-Allow-Origin", "*");
-      c.header("X-Cache", "HIT");
-      return c.json(cached.data);
-    }
-  }
-
-  try {
-    const layerInfo = await getLayerInfo(identifier);
-    
-    // Fetch Allmaps annotations for each map with concurrency limit
-    const annotationResults = await processWithConcurrency(
-      layerInfo.mapIds,
-      MOSAIC_CONCURRENCY_LIMIT,
-      async (mapId) => {
-        try {
-          const iiifUrl = `${baseUrl}/mapwarper/maps/${mapId}/iiif/info.json`;
-          const allmapsUrl = `https://annotations.allmaps.org/?url=${encodeURIComponent(iiifUrl)}`;
-          const response = await fetch(allmapsUrl);
-          if (!response.ok) return null;
-          const data = await response.json();
-          // Allmaps returns AnnotationPage with items array
-          return data?.items || [];
-        } catch {
-          return null;
-        }
-      }
-    );
-
-    // Flatten all annotation items
-    const allItems = annotationResults
-      .filter((items): items is unknown[] => items !== null && Array.isArray(items))
-      .flat();
-
-    if (allItems.length === 0) {
-      return c.json({ error: "No Allmaps annotations found for maps in this mosaic" }, 404);
-    }
-
-    // Build combined AnnotationPage
-    const annotationPage = {
-      type: "AnnotationPage",
-      "@context": "http://www.w3.org/ns/anno.jsonld",
-      items: allItems,
-    };
-
-    allmapsMosaicCache.set(cacheKey, { data: annotationPage, timestamp: Date.now() });
-
-    c.header("Content-Type", "application/ld+json");
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("X-Cache", "MISS");
-    return c.json(annotationPage);
-  } catch (error) {
-    if (error instanceof LayerNotFoundError) {
-      return c.json({ error: error.message }, 404);
-    }
-    console.error("Error fetching Allmaps mosaic annotations:", error);
-    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
@@ -597,4 +407,6 @@ function generateSizes(width: number, height: number): Array<{ width: number; he
   return sizes;
 }
 
-export default app;
+export default {
+  fetch: app.fetch,
+};
