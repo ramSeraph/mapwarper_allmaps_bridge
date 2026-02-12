@@ -4,7 +4,7 @@
  */
 
 import { generateAnnotation } from 'https://esm.sh/@allmaps/annotation@1.0.0-beta.36';
-import { CONFIG, getMapIiifUrl, copyToClipboard, getMwWarpUrl, getAllmapsEditorUrl, getAllmapsViewerUrl, getAllmapsAnnotationUrl } from './common.js';
+import { CONFIG, getMapIiifUrl, copyToClipboard, getMwWarpUrl, getAllmapsEditorUrl, getAllmapsViewerUrl, getAllmapsAnnotationUrl, fetchMwGeoreferencingData, buildGeoreferencedMap, formatDate } from './common.js';
 
 // URL params sync
 function getUrlParams() {
@@ -524,6 +524,7 @@ function renderMapCard(map) {
               <a href="${allmapsViewerUrl}" target="_blank">View in Allmaps</a>
               <button class="btn-link" onclick="generateMwViewerUrl('${map.id}', '${iiifUrl}')">View MW in Allmaps</button>
               <span id="mw-viewer-url-${map.id}" class="generated-url"></span>
+              <a href="compare.html?map=${map.id}" target="_blank">Compare</a>
             </div>
           </div>
         </div>
@@ -641,53 +642,14 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
   urlSpan.textContent = 'Loading...';
   
   try {
-    // Fetch GCPs and image info
-    const [gcpsRes, infoRes, maskRes] = await Promise.all([
-      fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
-      fetch(`${iiifUrl}/info.json`),
-      fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
-    ]);
+    const data = await fetchMwGeoreferencingData(mapId);
     
-    if (!gcpsRes.ok) throw new Error('Failed to fetch GCPs');
-    if (!infoRes.ok) throw new Error('Failed to fetch IIIF info');
-    
-    const gcpsData = await gcpsRes.json();
-    const iiifInfo = await infoRes.json();
-    const gcps = gcpsData.data || [];
-    
-    if (gcps.length === 0) {
+    if (data.gcps.length === 0) {
       urlSpan.textContent = 'No GCPs';
       return;
     }
     
-    // Get mask coords (use image perimeter if no mask or invalid mask)
-    // Mask endpoint returns IIIF-format coordinates (Y=0 at top)
-    const defaultMask = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
-    let maskCoords;
-    if (maskRes.ok) {
-      const maskData = await maskRes.json();
-      maskCoords = (maskData.coords && maskData.coords.length >= 3) ? maskData.coords : defaultMask;
-    } else {
-      maskCoords = defaultMask;
-    }
-    
-    // Build GeoreferencedMap object for @allmaps/annotation
-    const georeferencedMap = {
-      type: 'GeoreferencedMap',
-      '@context': 'https://schemas.allmaps.org/map/2/context.json',
-      resource: {
-        id: iiifUrl,
-        type: 'ImageService2',
-        width: iiifInfo.width,
-        height: iiifInfo.height
-      },
-      gcps: gcps.map(gcp => ({
-        resource: [parseFloat(gcp.attributes.x), parseFloat(gcp.attributes.y)],
-        geo: [parseFloat(gcp.attributes.lon), parseFloat(gcp.attributes.lat)]
-      })),
-      resourceMask: maskCoords
-    };
-    
+    const georeferencedMap = buildGeoreferencedMap(data.iiifUrl, data.iiifInfo, data.gcps, data.maskCoords);
     const annotation = generateAnnotation(georeferencedMap);
     const jsonStr = JSON.stringify(annotation, null, 0);
     const { html } = generateViewerLinkHtml(jsonStr);
@@ -709,47 +671,13 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
   try {
     // Helper to fetch data for a single map
     const fetchMapData = async (mapId) => {
-      const iiifUrl = getMapIiifUrl(mapId);
-      const [gcpsRes, infoRes, maskRes] = await Promise.all([
-        fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
-        fetch(`${iiifUrl}/info.json`),
-        fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
-      ]);
-      
-      if (!gcpsRes.ok || !infoRes.ok) return null;
-      
-      const gcpsData = await gcpsRes.json();
-      const iiifInfo = await infoRes.json();
-      const gcps = gcpsData.data || [];
-      
-      if (gcps.length === 0) return null;
-      
-      // Get mask coords (use image perimeter if no mask or invalid mask)
-      // Mask endpoint returns IIIF-format coordinates (Y=0 at top)
-      const defaultMask = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
-      let maskCoords;
-      if (maskRes.ok) {
-        const maskData = await maskRes.json();
-        maskCoords = (maskData.coords && maskData.coords.length >= 3) ? maskData.coords : defaultMask;
-      } else {
-        maskCoords = defaultMask;
+      try {
+        const data = await fetchMwGeoreferencingData(mapId);
+        if (data.gcps.length === 0) return null;
+        return buildGeoreferencedMap(data.iiifUrl, data.iiifInfo, data.gcps, data.maskCoords);
+      } catch {
+        return null;
       }
-      
-      return {
-        type: 'GeoreferencedMap',
-        '@context': 'https://schemas.allmaps.org/map/2/context.json',
-        resource: {
-          id: iiifUrl,
-          type: 'ImageService2',
-          width: iiifInfo.width,
-          height: iiifInfo.height
-        },
-        gcps: gcps.map(gcp => ({
-          resource: [parseFloat(gcp.attributes.x), parseFloat(gcp.attributes.y)],
-          geo: [parseFloat(gcp.attributes.lon), parseFloat(gcp.attributes.lat)]
-        })),
-        resourceMask: maskCoords
-      };
     };
     
     // Process in chunks of 20
@@ -869,13 +797,10 @@ async function toggleMetadata(mapId) {
       const data = await response.json();
       const attrs = data.data.attributes;
       
-      const createdAt = attrs.created_at ? new Date(attrs.created_at).toLocaleDateString() : 'N/A';
-      const updatedAt = attrs.updated_at ? new Date(attrs.updated_at).toLocaleDateString() : 'N/A';
-      
       content.innerHTML = `
         <div style="display:grid;grid-template-columns:auto 1fr;gap:0.25rem 0.5rem;">
-          <strong>Created:</strong><span>${createdAt}</span>
-          <strong>Updated:</strong><span>${updatedAt}</span>
+          <strong>Created:</strong><span>${formatDate(attrs.created_at)}</span>
+          <strong>Updated:</strong><span>${formatDate(attrs.updated_at)}</span>
           ${attrs.description ? `<strong>Description:</strong><span>${attrs.description}</span>` : ''}
           ${attrs.source_uri ? `<strong>Source:</strong><span><a href="${attrs.source_uri}" target="_blank">${attrs.source_uri}</a></span>` : ''}
           ${attrs.bbox ? `<strong>Bbox:</strong><span>${attrs.bbox}</span>` : ''}
@@ -914,13 +839,10 @@ async function toggleMosaicMetadata(layerId) {
       const data = await response.json();
       const attrs = data.data.attributes;
       
-      const createdAt = attrs.created_at ? new Date(attrs.created_at).toLocaleDateString() : 'N/A';
-      const updatedAt = attrs.updated_at ? new Date(attrs.updated_at).toLocaleDateString() : 'N/A';
-      
       content.innerHTML = `
         <div style="display:grid;grid-template-columns:auto 1fr;gap:0.25rem 0.5rem;">
-          <strong>Created:</strong><span>${createdAt}</span>
-          <strong>Updated:</strong><span>${updatedAt}</span>
+          <strong>Created:</strong><span>${formatDate(attrs.created_at)}</span>
+          <strong>Updated:</strong><span>${formatDate(attrs.updated_at)}</span>
           ${attrs.description ? `<strong>Description:</strong><span>${attrs.description}</span>` : ''}
           ${attrs.bbox ? `<strong>Bbox:</strong><span>${attrs.bbox}</span>` : ''}
         </div>

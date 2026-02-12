@@ -2,7 +2,7 @@
  * Editor page for MapWarper ↔ Allmaps sync
  */
 
-import { CONFIG, getMapIiifUrl, parseAllmapsGcps, parseAllmapsMask, compareGcps, compareMasks, getMwWarpUrl, getAllmapsEditorUrl } from './common.js';
+import { CONFIG, getMapIiifUrl, parseAllmapsGcps, parseAllmapsMask, compareGcps, compareMasks, getMwWarpUrl, getAllmapsEditorUrl, copyToClipboard, formatGcpsCsv, getAllmapsAnnotationUrl, fetchAllmapsAnnotation } from './common.js';
 
 const params = new URLSearchParams(window.location.search);
 const mapId = params.get('map');
@@ -12,6 +12,7 @@ const controlsEl = document.getElementById('copy-controls');
 const headerEl = document.getElementById('header');
 const titleEl = document.getElementById('title');
 const syncStatusEl = document.getElementById('sync-status');
+const compareLinkEl = document.getElementById('compare-link');
 
 // Set up header based on mode
 headerEl.classList.add(mode);
@@ -20,7 +21,9 @@ document.title = mode === 'mapwarper' ? 'Sync to MapWarper' : 'Sync to Allmaps';
 
 if (!mapId) {
   contentEl.innerHTML = '<div class="error">Missing map ID.<br><br>Usage: ?map={mapId}&mode=allmaps|mapwarper</div>';
+  compareLinkEl.style.display = 'none';
 } else {
+  compareLinkEl.href = `compare.html?map=${mapId}`;
   contentEl.innerHTML = '<div class="loading">Loading map data...</div>';
   loadMapData(mapId, mode);
 }
@@ -40,8 +43,6 @@ async function refreshStatus() {
 }
 
 async function fetchSyncData(mapId, iiifUrl) {
-  const allmapsUrl = `${CONFIG.allmapsAnnotationsUrl}/?url=${encodeURIComponent(iiifUrl + '/info.json')}`;
-  
   const [iiifInfo, gcpsResponse, maskCoords, allmapsAnnotation] = await Promise.all([
     fetch(`${iiifUrl}/info.json`).then(r => r.json()),
     fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`).then(r => r.json()),
@@ -49,7 +50,7 @@ async function fetchSyncData(mapId, iiifUrl) {
       .then(r => r.ok ? r.json() : null)
       .then(d => d?.coords || null)
       .catch(() => null),
-    fetch(allmapsUrl, { redirect: 'follow' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetchAllmapsAnnotation(mapId),
   ]);
   
   const mwGcps = gcpsResponse.data || [];
@@ -145,7 +146,7 @@ function updateMapwarperControls(allmapsGcps, gcpsMatch) {
   
   if (allmapsGcps.length > 0 && !gcpsMatch) {
     window.allmapsGcpsData = allmapsGcps;
-    const gcpsText = allmapsGcps.map(g => `${g.x},${g.y},${g.lon},${g.lat}`).join('\n');
+    const gcpsText = formatGcpsCsv(allmapsGcps);
     controls += `
       <div class="copy-section expandable">
         <label>Allmaps GCPs:</label>
@@ -211,7 +212,7 @@ function downloadCsv(mapId) {
     return;
   }
   
-  const csv = 'x,y,lon,lat\n' + gcps.map(g => `${g.x},${g.y},${g.lon},${g.lat}`).join('\n');
+  const csv = formatGcpsCsv(gcps);
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -236,10 +237,11 @@ function toggleExpand(btn) {
 
 function copyText(id) {
   const textarea = document.getElementById(id);
+  const btn = textarea.parentElement.parentElement.querySelector('.btn-copy');
+  const orig = btn.textContent;
+  
   navigator.clipboard.writeText(textarea.value)
     .then(() => {
-      const btn = textarea.parentElement.parentElement.querySelector('.btn-copy');
-      const orig = btn.textContent;
       btn.textContent = '✓ Copied!';
       setTimeout(() => btn.textContent = orig, 1500);
     })

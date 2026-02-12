@@ -150,3 +150,71 @@ export function copyToClipboard(text, successMsg = 'Copied to clipboard!') {
 export function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// Format date for display
+export function formatDate(isoString) {
+  return isoString ? new Date(isoString).toLocaleDateString() : 'N/A';
+}
+
+// Format GCPs as CSV string with header
+export function formatGcpsCsv(gcps) {
+  return 'x,y,lon,lat\n' + gcps.map(g => `${g.x},${g.y},${g.lon},${g.lat}`).join('\n');
+}
+
+// Fetch MapWarper georeferencing data for a map
+export async function fetchMwGeoreferencingData(mapId) {
+  const iiifUrl = getMapIiifUrl(mapId);
+  
+  const [gcpsRes, infoRes, maskRes] = await Promise.all([
+    fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}/gcps`),
+    fetch(`${iiifUrl}/info.json`),
+    fetch(`${window.location.origin}/mapwarper/maps/${mapId}/iiif/mask.json`)
+  ]);
+  
+  if (!gcpsRes.ok) throw new Error('Failed to fetch GCPs');
+  if (!infoRes.ok) throw new Error('Failed to fetch IIIF info');
+  
+  const gcpsData = await gcpsRes.json();
+  const iiifInfo = await infoRes.json();
+  const gcps = gcpsData.data || [];
+  
+  // Get mask coords (use image perimeter if no mask or invalid mask)
+  const defaultMask = [[0, 0], [iiifInfo.width, 0], [iiifInfo.width, iiifInfo.height], [0, iiifInfo.height]];
+  let maskCoords = defaultMask;
+  if (maskRes.ok) {
+    const maskData = await maskRes.json();
+    if (maskData.coords && maskData.coords.length >= 3) {
+      maskCoords = maskData.coords;
+    }
+  }
+  
+  return { iiifUrl, iiifInfo, gcps, maskCoords };
+}
+
+// Build GeoreferencedMap object from MapWarper data
+export function buildGeoreferencedMap(iiifUrl, iiifInfo, gcps, maskCoords) {
+  return {
+    type: 'GeoreferencedMap',
+    '@context': 'https://schemas.allmaps.org/map/2/context.json',
+    resource: {
+      id: iiifUrl,
+      type: 'ImageService2',
+      width: iiifInfo.width,
+      height: iiifInfo.height
+    },
+    gcps: gcps.map(gcp => ({
+      resource: [parseFloat(gcp.attributes.x), parseFloat(gcp.attributes.y)],
+      geo: [parseFloat(gcp.attributes.lon), parseFloat(gcp.attributes.lat)]
+    })),
+    resourceMask: maskCoords
+  };
+}
+
+// Fetch Allmaps annotation for a map
+export async function fetchAllmapsAnnotation(mapId) {
+  const iiifUrl = getMapIiifUrl(mapId);
+  const annotationUrl = getAllmapsAnnotationUrl(iiifUrl);
+  const res = await fetch(annotationUrl, { redirect: 'follow' });
+  if (!res.ok) return null;
+  return res.json();
+}
