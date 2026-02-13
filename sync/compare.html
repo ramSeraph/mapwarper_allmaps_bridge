@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compare Georeferencing - MapWarper ↔ Allmaps</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/@maplibre/maplibre-gl-compare@0.5.0/dist/maplibre-gl-compare.css" />
+  <style>
+    .compare-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 120px);
+    }
+    .map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+    }
+    .map-label {
+      position: absolute;
+      top: 10px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      z-index: 10;
+      border-radius: 4px;
+    }
+    .map-label.left {
+      left: 10px;
+    }
+    .map-label.right {
+      right: 10px;
+    }
+    .status-message {
+      text-align: center;
+      padding: 40px;
+      font-size: 1.2rem;
+      color: #666;
+    }
+    .status-message.error {
+      color: #e74c3c;
+    }
+    .header-info {
+      padding: 1rem;
+      background: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+    }
+    .header-info h1 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1.2rem;
+    }
+    .header-info .meta {
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .back-link {
+      margin-right: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-info">
+    <a href="index.html" class="back-link">← Back to list</a>
+    <h1 id="page-title">Compare Georeferencing</h1>
+    <div class="meta" id="page-meta"></div>
+  </div>
+  
+  <div id="status" class="status-message">Loading...</div>
+  
+  <div id="compare-wrapper" style="display: none;">
+    <div class="compare-container" id="comparison-container">
+      <div id="before" class="map"></div>
+      <div id="after" class="map"></div>
+      <div class="map-label left" id="label-left">MapWarper</div>
+      <div class="map-label right" id="label-right">Allmaps</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-compare@0.5.0/dist/maplibre-gl-compare.js"></script>
+  <script type="module" src="compare.js"></script>
+</body>
+</html>
