@@ -14,13 +14,7 @@ function getUrlParams() {
     page: parseInt(params.get('page')) || 1,
     q: params.get('q') || '',
     rectified: params.get('rectified') === 'true',
-    mosaic: params.get('mosaic') || null,  // Mosaic detail view
-    // Tab-specific params
-    mapsPage: parseInt(params.get('mapsPage')) || 1,
-    mosaicsPage: parseInt(params.get('mosaicsPage')) || 1,
-    mapsQ: params.get('mapsQ') || '',
-    mosaicsQ: params.get('mosaicsQ') || '',
-    mapsRectified: params.get('mapsRectified') === 'true',
+    mosaic: params.get('mosaic') || null,
   };
 }
 
@@ -41,6 +35,17 @@ function updateUrlParams() {
   const newUrl = params.toString() 
     ? `${window.location.pathname}?${params.toString()}`
     : window.location.pathname;
+  window.history.replaceState({}, '', newUrl);
+}
+
+function updateMosaicUrlParams(layerId) {
+  const params = new URLSearchParams();
+  params.set('mosaic', layerId);
+  if (state.mosaicMapsPage > 1) params.set('page', state.mosaicMapsPage);
+  if (state.mosaicMapsRectifiedOnly) params.set('rectified', 'true');
+  if (state.mosaicMapsSearchQuery) params.set('q', state.mosaicMapsSearchQuery);
+  
+  const newUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, '', newUrl);
 }
 
@@ -76,11 +81,13 @@ const state = {
   mosaicsPage: 1,
   mosaicMapsPage: 1,
   mapsRectifiedOnly: false,
+  mosaicMapsRectifiedOnly: false,
+  mosaicMapsSearchQuery: '',
+  mosaicMapsTotalCount: 0,
   mapsSearchQuery: '',
   mosaicsSearchQuery: '',
   mapsData: null,
   mosaicsData: null,
-  currentMosaic: null,  // For mosaic detail view
   statusCache: new Map(),
 };
 
@@ -95,7 +102,6 @@ const elements = {
   loading: document.getElementById('loading'),
   loadingBar: document.getElementById('loading-bar'),
   rectifiedOnly: document.getElementById('rectified-only'),
-  refreshBtn: document.getElementById('refresh-btn'),
   rectifiedFilterContainer: document.getElementById('rectified-filter-container'),
   searchInput: document.getElementById('search-input'),
   searchBtn: document.getElementById('search-btn'),
@@ -109,8 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Check if we're in mosaic detail view
   if (params.mosaic) {
-    state.currentMosaic = params.mosaic;
     state.mosaicMapsPage = params.page;
+    state.mosaicMapsRectifiedOnly = params.rectified;
+    state.mosaicMapsSearchQuery = params.q;
     setupEventListeners();
     loadMosaicDetail(params.mosaic);
     return;
@@ -173,16 +180,6 @@ function setupEventListeners() {
     if (e.key === 'Enter') performSearch();
   });
   elements.clearSearchBtn.addEventListener('click', clearSearch);
-
-  // Refresh
-  elements.refreshBtn.addEventListener('click', () => {
-    state.statusCache.clear();
-    if (state.currentTab === 'maps') {
-      loadMaps();
-    } else {
-      loadMosaics();
-    }
-  });
 }
 
 async function performSearch() {
@@ -196,19 +193,9 @@ async function performSearch() {
     state.mosaicsPage = 1;
   }
   
-  if (query) {
-    elements.clearSearchBtn.classList.remove('hidden');
-  } else {
-    elements.clearSearchBtn.classList.add('hidden');
-  }
-  
+  elements.clearSearchBtn.classList.toggle('hidden', !query);
   updateUrlParams();
-  
-  if (state.currentTab === 'maps') {
-    await loadMaps();
-  } else {
-    await loadMosaics();
-  }
+  await loadCurrentTab();
 }
 
 function clearSearch() {
@@ -221,14 +208,12 @@ function clearSearch() {
   }
   elements.searchInput.value = '';
   elements.clearSearchBtn.classList.add('hidden');
-  
   updateUrlParams();
-  
-  if (state.currentTab === 'maps') {
-    loadMaps();
-  } else {
-    loadMosaics();
-  }
+  loadCurrentTab();
+}
+
+function loadCurrentTab() {
+  return state.currentTab === 'maps' ? loadMaps() : loadMosaics();
 }
 
 function switchTab(tab) {
@@ -386,27 +371,18 @@ async function loadMosaicDetail(layerId) {
   
   try {
     // Fetch mosaic info
-    const response = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/layers/${layerId}`);
-    if (!response.ok) throw new Error('Failed to fetch mosaic');
-    const layerData = await response.json();
+    const layerResponse = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/layers/${layerId}`);
+    if (!layerResponse.ok) throw new Error('Failed to fetch mosaic');
+    
+    const layerData = await layerResponse.json();
     const layer = layerData.data;
     const attrs = layer.attributes;
     
-    // Get map IDs from relationships
-    const mapIds = layer.relationships?.maps?.data?.map(m => m.id) || [];
+    // Store total count for pagination
+    state.mosaicMapsTotalCount = attrs.maps_count;
     
-    // Paginate map IDs
-    const perPage = CONFIG.perPage;
-    const totalPages = Math.ceil(mapIds.length / perPage);
-    const startIdx = (state.mosaicMapsPage - 1) * perPage;
-    const pageMapIds = mapIds.slice(startIdx, startIdx + perPage);
-    
-    // Fetch map details for current page
-    const mapPromises = pageMapIds.map(id => 
-      fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${id}`).then(r => r.json()).catch(() => null)
-    );
-    const mapResults = await Promise.all(mapPromises);
-    const maps = mapResults.filter(m => m).map(m => m.data);
+    // Get all map IDs for viewer links (from relationships)
+    const allMapIds = layer.relationships?.maps?.data?.map(m => m.id) || [];
     
     // Render mosaic detail
     const thumbUrl = `${CONFIG.mapwarperBaseUrl}/layers/thumb/${layer.id}`;
@@ -432,9 +408,9 @@ async function loadMosaicDetail(layerId) {
                   <a href="${CONFIG.mapwarperBaseUrl}/layers/${layer.id}" target="_blank" class="btn btn-small" style="background:#e67e22;color:white;font-size:0.7rem;padding:0.2rem 0.4rem;">MapWarper</a>
                 </div>
                 <div class="card-links">
-                  <button class="btn-link" onclick="generateMosaicViewerUrl('${layer.id}', '${mapIds.join(',')}')">View MW in Allmaps</button>
+                  <button class="btn-link" onclick="generateMosaicViewerUrl('${layer.id}', '${allMapIds.join(',')}')">View MW in Allmaps</button>
                   <span id="mosaic-viewer-url-${layer.id}" class="generated-url"></span>
-                  <button class="btn-link" onclick="generateAllmapsMosaicViewerUrl('${layer.id}', '${mapIds.join(',')}')">View Allmaps in Allmaps</button>
+                  <button class="btn-link" onclick="generateMosaicViewerUrl('${layer.id}', '${allMapIds.join(',')}', 'allmaps')">View Allmaps in Allmaps</button>
                   <span id="allmaps-mosaic-viewer-url-${layer.id}" class="generated-url"></span>
                 </div>
               </div>
@@ -443,24 +419,112 @@ async function loadMosaicDetail(layerId) {
         </div>
       </div>
       <hr style="margin:1.5rem 0;border:none;border-top:1px solid #ddd;">
-      <h3 style="margin-bottom:1rem;">Maps in this Mosaic (${mapIds.length} total)</h3>
+      <h3 style="margin-bottom:1rem;">Maps in this Mosaic</h3>
+      <div class="filters" style="margin-bottom:1rem;">
+        <div class="search-box">
+          <input type="text" id="mosaic-search-input" placeholder="Search maps..." value="${state.mosaicMapsSearchQuery}" autocomplete="off">
+          <button id="mosaic-search-btn" class="btn btn-primary">🔍 Search</button>
+          <button id="mosaic-clear-search-btn" class="btn btn-secondary ${state.mosaicMapsSearchQuery ? '' : 'hidden'}">✕ Clear</button>
+        </div>
+        <label>
+          <input type="checkbox" id="mosaic-rectified-only" ${state.mosaicMapsRectifiedOnly ? 'checked' : ''}>
+          Show only rectified maps
+        </label>
+      </div>
+      <div id="mosaic-loading-bar" class="loading-bar hidden"></div>
       <div id="mosaic-maps-grid" class="cards-grid"></div>
       <div id="mosaic-maps-pagination" class="pagination"></div>
     `;
     
-    // Render map cards
-    const mapsGrid = document.getElementById('mosaic-maps-grid');
-    mapsGrid.innerHTML = maps.map(map => renderMapCard(map)).join('');
+    // Add event listener for filter toggle
+    document.getElementById('mosaic-rectified-only').addEventListener('change', (e) => {
+      state.mosaicMapsRectifiedOnly = e.target.checked;
+      state.mosaicMapsPage = 1;
+      updateMosaicUrlParams(layerId);
+      loadMosaicMaps(layerId, attrs.maps_count);
+    });
     
-    // Render pagination
-    const paginationContainer = document.getElementById('mosaic-maps-pagination');
-    renderMosaicMapsPagination(paginationContainer, { total_entries: mapIds.length, total_pages: totalPages }, layerId);
+    // Add event listeners for search
+    const searchInput = document.getElementById('mosaic-search-input');
+    const searchBtn = document.getElementById('mosaic-search-btn');
+    const clearBtn = document.getElementById('mosaic-clear-search-btn');
+    
+    const performMosaicSearch = () => {
+      state.mosaicMapsSearchQuery = searchInput.value.trim();
+      state.mosaicMapsPage = 1;
+      updateMosaicUrlParams(layerId);
+      loadMosaicMaps(layerId, attrs.maps_count);
+    };
+    
+    searchBtn.addEventListener('click', performMosaicSearch);
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') performMosaicSearch();
+    });
+    
+    clearBtn.addEventListener('click', () => {
+      state.mosaicMapsSearchQuery = '';
+      state.mosaicMapsPage = 1;
+      searchInput.value = '';
+      clearBtn.classList.add('hidden');
+      updateMosaicUrlParams(layerId);
+      loadMosaicMaps(layerId, attrs.maps_count);
+    });
+    
+    // Load mosaic maps
+    await loadMosaicMaps(layerId, attrs.maps_count);
     
   } catch (error) {
     console.error('Error loading mosaic detail:', error);
     detailContainer.innerHTML = `<p class="error">Error loading mosaic: ${error.message}</p>`;
   }
   hideLoading();
+}
+
+async function loadMosaicMaps(layerId, totalMapsCount) {
+  const loadingBar = document.getElementById('mosaic-loading-bar');
+  const mapsGrid = document.getElementById('mosaic-maps-grid');
+  const paginationContainer = document.getElementById('mosaic-maps-pagination');
+  const clearBtn = document.getElementById('mosaic-clear-search-btn');
+  
+  loadingBar.classList.remove('hidden');
+  
+  try {
+    let mapsUrl = `${CONFIG.mapwarperBaseUrl}/api/v1/layers/${layerId}/maps?per_page=${CONFIG.perPage}&page=${state.mosaicMapsPage}`;
+    if (state.mosaicMapsRectifiedOnly) mapsUrl += '&show_warped=1';
+    if (state.mosaicMapsSearchQuery) mapsUrl += `&query=${encodeURIComponent(state.mosaicMapsSearchQuery)}`;
+    
+    const mapsResponse = await fetch(mapsUrl);
+    if (!mapsResponse.ok) throw new Error('Failed to fetch mosaic maps');
+    
+    const mapsData = await mapsResponse.json();
+    const maps = mapsData.data || [];
+    const meta = mapsData.meta || {};
+    
+    // Update heading
+    const heading = document.querySelector('#mosaic-detail h3');
+    if (heading) {
+      heading.textContent = `Maps in this Mosaic (${meta.total_entries || 0}${state.mosaicMapsRectifiedOnly || state.mosaicMapsSearchQuery ? ' matching' : ''} of ${totalMapsCount} total)`;
+    }
+    
+    // Show/hide clear button
+    if (state.mosaicMapsSearchQuery) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
+    
+    // Render map cards
+    mapsGrid.innerHTML = maps.map(map => renderMapCard(map)).join('');
+    
+    // Render pagination
+    renderMosaicMapsPagination(paginationContainer, meta, layerId);
+    
+  } catch (error) {
+    console.error('Error loading mosaic maps:', error);
+    mapsGrid.innerHTML = `<p class="error">Error loading maps: ${error.message}</p>`;
+  }
+  
+  loadingBar.classList.add('hidden');
 }
 
 function renderMosaicMapsPagination(container, meta, layerId) {
@@ -476,11 +540,8 @@ function renderMosaicMapsPagination(container, meta, layerId) {
 
 function goToMosaicMapsPage(page, layerId) {
   state.mosaicMapsPage = page;
-  const params = new URLSearchParams();
-  params.set('mosaic', layerId);
-  if (page > 1) params.set('page', page);
-  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-  loadMosaicDetail(layerId);
+  updateMosaicUrlParams(layerId);
+  loadMosaicMaps(layerId, state.mosaicMapsTotalCount);
 }
 
 // Reusable map card renderer
@@ -542,12 +603,33 @@ function renderMapCard(map) {
 // Render functions
 function renderMaps(data) {
   const maps = data.data || [];
+  const meta = data.meta || {};
+  const total = meta.total_entries || 0;
+  
+  // Update title
+  const titleEl = document.getElementById('maps-title');
+  if (state.mapsSearchQuery || state.mapsRectifiedOnly) {
+    titleEl.textContent = `${total} map${total !== 1 ? 's' : ''} found`;
+  } else {
+    titleEl.textContent = `${total} map${total !== 1 ? 's' : ''}`;
+  }
+  
   elements.mapsGrid.innerHTML = maps.map(map => renderMapCard(map)).join('');
   renderPagination(elements.mapsPagination, data.meta, 'maps');
 }
 
 function renderMosaics(data) {
   const layers = data.data || [];
+  const meta = data.meta || {};
+  const total = meta.total_entries || 0;
+  
+  // Update title
+  const titleEl = document.getElementById('mosaics-title');
+  if (state.mosaicsSearchQuery) {
+    titleEl.textContent = `${total} mosaic${total !== 1 ? 's' : ''} found`;
+  } else {
+    titleEl.textContent = `${total} mosaic${total !== 1 ? 's' : ''}`;
+  }
   
   elements.mosaicsGrid.innerHTML = layers.map(layer => {
     const attrs = layer.attributes;
@@ -576,7 +658,7 @@ function renderMosaics(data) {
           </div>
         </div>
         <div class="card-metadata">
-          <button class="card-metadata-toggle" onclick="toggleMosaicMetadata('${layer.id}')">
+          <button class="card-metadata-toggle" onclick="toggleMetadata('${layer.id}', 'mosaic')">
             <span id="mosaic-metadata-arrow-${layer.id}">▶</span> More details
           </button>
           <div id="mosaic-metadata-${layer.id}" class="card-metadata-content" data-loaded="false"></div>
@@ -610,13 +692,11 @@ function renderPagination(container, meta, type) {
 function goToPage(page, type) {
   if (type === 'maps') {
     state.mapsPage = page;
-    updateUrlParams();
-    loadMaps();
   } else {
     state.mosaicsPage = page;
-    updateUrlParams();
-    loadMosaics();
   }
+  updateUrlParams();
+  loadCurrentTab();
 }
 
 // Helpers
@@ -660,9 +740,17 @@ async function generateMwViewerUrl(mapId, iiifUrl) {
   }
 }
 
-// Generate mosaic viewer URL by fetching GCPs and mask for all maps
-async function generateMosaicViewerUrl(layerId, mapIdsStr) {
-  const urlSpan = document.getElementById(`mosaic-viewer-url-${layerId}`);
+// Generate viewer link HTML from annotation JSON
+function generateViewerLinkHtml(jsonStr, label = 'Open ↗') {
+  const viewerUrl = `https://viewer.allmaps.org/#data=${encodeURIComponent(jsonStr)}`;
+  return { html: `<a href="${viewerUrl}" target="_blank">${label}</a>`, viewerUrl, jsonStr };
+}
+
+// Generate mosaic viewer URL by fetching data for all maps
+// source: 'mw' for MapWarper GCPs, 'allmaps' for Allmaps annotations
+async function generateMosaicViewerUrl(layerId, mapIdsStr, source = 'mw') {
+  const spanId = source === 'allmaps' ? `allmaps-mosaic-viewer-url-${layerId}` : `mosaic-viewer-url-${layerId}`;
+  const urlSpan = document.getElementById(spanId);
   urlSpan.textContent = 'Loading...';
   
   const mapIds = mapIdsStr.split(',').filter(id => id);
@@ -670,27 +758,40 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
   
   try {
     // Helper to fetch data for a single map
-    const fetchMapData = async (mapId) => {
-      try {
-        const data = await fetchMwGeoreferencingData(mapId);
-        if (data.gcps.length === 0) return null;
-        return buildGeoreferencedMap(data.iiifUrl, data.iiifInfo, data.gcps, data.maskCoords);
-      } catch {
-        return null;
-      }
-    };
+    const fetchMapData = source === 'allmaps' 
+      ? async (mapId) => {
+          const iiifUrl = getMapIiifUrl(mapId);
+          const annotationUrl = getAllmapsAnnotationUrl(iiifUrl);
+          try {
+            const res = await fetch(annotationUrl);
+            if (!res.ok) return null;
+            const annotation = await res.json();
+            const { parseAnnotation } = await import('https://esm.sh/@allmaps/annotation@1.0.0-beta.36');
+            const maps = parseAnnotation(annotation);
+            return Array.isArray(maps) ? maps : [maps];
+          } catch { return null; }
+        }
+      : async (mapId) => {
+          try {
+            const data = await fetchMwGeoreferencingData(mapId);
+            if (data.gcps.length === 0) return null;
+            return [buildGeoreferencedMap(data.iiifUrl, data.iiifInfo, data.gcps, data.maskCoords)];
+          } catch { return null; }
+        };
     
-    // Process in chunks of 20
+    // Process in chunks
     const georeferencedMaps = [];
     for (let i = 0; i < mapIds.length; i += chunkSize) {
       const chunk = mapIds.slice(i, i + chunkSize);
       urlSpan.textContent = `Loading... (${i}/${mapIds.length})`;
       const chunkResults = await Promise.all(chunk.map(fetchMapData));
-      georeferencedMaps.push(...chunkResults.filter(m => m));
+      for (const maps of chunkResults) {
+        if (maps) georeferencedMaps.push(...maps);
+      }
     }
     
     if (georeferencedMaps.length === 0) {
-      urlSpan.textContent = 'No GCPs';
+      urlSpan.textContent = source === 'allmaps' ? 'No annotations' : 'No GCPs';
       return;
     }
     
@@ -700,84 +801,15 @@ async function generateMosaicViewerUrl(layerId, mapIdsStr) {
     urlSpan.innerHTML = html;
   } catch (err) {
     urlSpan.textContent = 'Error';
-    console.error('Failed to generate mosaic viewer URL:', err);
-  }
-}
-
-// Copy annotation JSON to clipboard (generic for maps and mosaics)
-function copyAnnotationJson(store, id) {
-  const jsonStr = window[store]?.[id];
-  if (jsonStr) {
-    navigator.clipboard.writeText(jsonStr).then(() => {
-      alert(`Annotation JSON copied!\n\nOpen Allmaps Viewer to paste:\nhttps://viewer.allmaps.org/`);
-    });
-  }
-}
-
-// Generate viewer link HTML from annotation JSON
-// Uses hash fragment (#data=) instead of query string (?data=) to avoid server-side URL limits
-function generateViewerLinkHtml(jsonStr, label = 'Open ↗') {
-  const viewerUrl = `https://viewer.allmaps.org/#data=${encodeURIComponent(jsonStr)}`;
-  return { html: `<a href="${viewerUrl}" target="_blank">${label}</a>`, viewerUrl, jsonStr };
-}
-
-// Generate Allmaps mosaic viewer URL by fetching annotations from Allmaps
-async function generateAllmapsMosaicViewerUrl(layerId, mapIdsStr) {
-  const urlSpan = document.getElementById(`allmaps-mosaic-viewer-url-${layerId}`);
-  urlSpan.textContent = 'Loading...';
-  
-  const mapIds = mapIdsStr.split(',').filter(id => id);
-  const chunkSize = 20;
-  
-  try {
-    // Helper to fetch annotation for a single map from Allmaps
-    const fetchMapAnnotation = async (mapId) => {
-      const iiifUrl = getMapIiifUrl(mapId);
-      const annotationUrl = getAllmapsAnnotationUrl(iiifUrl);
-      
-      try {
-        const res = await fetch(annotationUrl);
-        if (!res.ok) return null;
-        const annotation = await res.json();
-        // Parse the annotation to get GeoreferencedMap(s)
-        const { parseAnnotation } = await import('https://esm.sh/@allmaps/annotation@1.0.0-beta.36');
-        const maps = parseAnnotation(annotation);
-        return Array.isArray(maps) ? maps : [maps];
-      } catch {
-        return null;
-      }
-    };
-    
-    // Process in chunks of 20
-    const allGeoreferencedMaps = [];
-    for (let i = 0; i < mapIds.length; i += chunkSize) {
-      const chunk = mapIds.slice(i, i + chunkSize);
-      urlSpan.textContent = `Loading... (${i}/${mapIds.length})`;
-      const chunkResults = await Promise.all(chunk.map(fetchMapAnnotation));
-      for (const maps of chunkResults) {
-        if (maps) allGeoreferencedMaps.push(...maps);
-      }
-    }
-    
-    if (allGeoreferencedMaps.length === 0) {
-      urlSpan.textContent = 'No annotations';
-      return;
-    }
-    
-    const annotation = generateAnnotation(allGeoreferencedMaps);
-    const jsonStr = JSON.stringify(annotation, null, 0);
-    const { html } = generateViewerLinkHtml(jsonStr, `Open ↗ (${allGeoreferencedMaps.length} maps)`);
-    urlSpan.innerHTML = html;
-  } catch (err) {
-    urlSpan.textContent = 'Error';
-    console.error('Failed to generate Allmaps mosaic viewer URL:', err);
+    console.error(`Failed to generate ${source} mosaic viewer URL:`, err);
   }
 }
 
 // Toggle metadata and load if first time
-async function toggleMetadata(mapId) {
-  const content = document.getElementById(`metadata-${mapId}`);
-  const arrow = document.getElementById(`metadata-arrow-${mapId}`);
+async function toggleMetadata(id, type = 'map') {
+  const prefix = type === 'mosaic' ? 'mosaic-metadata' : 'metadata';
+  const content = document.getElementById(`${prefix}-${id}`);
+  const arrow = document.getElementById(`${prefix}-arrow-${id}`);
   
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
@@ -792,7 +824,8 @@ async function toggleMetadata(mapId) {
     arrow.textContent = '▼';
     
     try {
-      const response = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/maps/${mapId}`);
+      const endpoint = type === 'mosaic' ? 'layers' : 'maps';
+      const response = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/${endpoint}/${id}`);
       if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
       const attrs = data.data.attributes;
@@ -802,48 +835,7 @@ async function toggleMetadata(mapId) {
           <strong>Created:</strong><span>${formatDate(attrs.created_at)}</span>
           <strong>Updated:</strong><span>${formatDate(attrs.updated_at)}</span>
           ${attrs.description ? `<strong>Description:</strong><span>${attrs.description}</span>` : ''}
-          ${attrs.source_uri ? `<strong>Source:</strong><span><a href="${attrs.source_uri}" target="_blank">${attrs.source_uri}</a></span>` : ''}
-          ${attrs.bbox ? `<strong>Bbox:</strong><span>${attrs.bbox}</span>` : ''}
-        </div>
-      `;
-      content.dataset.loaded = 'true';
-    } catch (err) {
-      content.innerHTML = '<em>Failed to load metadata</em>';
-    }
-  } else {
-    content.classList.add('expanded');
-    arrow.textContent = '▼';
-  }
-}
-
-// Toggle mosaic metadata and load if first time
-async function toggleMosaicMetadata(layerId) {
-  const content = document.getElementById(`mosaic-metadata-${layerId}`);
-  const arrow = document.getElementById(`mosaic-metadata-arrow-${layerId}`);
-  
-  if (content.classList.contains('expanded')) {
-    content.classList.remove('expanded');
-    arrow.textContent = '▶';
-    return;
-  }
-  
-  // Load metadata if not loaded yet
-  if (content.dataset.loaded === 'false') {
-    content.innerHTML = '<em>Loading...</em>';
-    content.classList.add('expanded');
-    arrow.textContent = '▼';
-    
-    try {
-      const response = await fetch(`${CONFIG.mapwarperBaseUrl}/api/v1/layers/${layerId}`);
-      if (!response.ok) throw new Error('Failed to fetch');
-      const data = await response.json();
-      const attrs = data.data.attributes;
-      
-      content.innerHTML = `
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:0.25rem 0.5rem;">
-          <strong>Created:</strong><span>${formatDate(attrs.created_at)}</span>
-          <strong>Updated:</strong><span>${formatDate(attrs.updated_at)}</span>
-          ${attrs.description ? `<strong>Description:</strong><span>${attrs.description}</span>` : ''}
+          ${type === 'map' && attrs.source_uri ? `<strong>Source:</strong><span><a href="${attrs.source_uri}" target="_blank">${attrs.source_uri}</a></span>` : ''}
           ${attrs.bbox ? `<strong>Bbox:</strong><span>${attrs.bbox}</span>` : ''}
         </div>
       `;
@@ -859,11 +851,8 @@ async function toggleMosaicMetadata(layerId) {
 
 // Expose functions for onclick handlers
 window.toggleMetadata = toggleMetadata;
-window.toggleMosaicMetadata = toggleMosaicMetadata;
 window.generateMwViewerUrl = generateMwViewerUrl;
 window.generateMosaicViewerUrl = generateMosaicViewerUrl;
-window.generateAllmapsMosaicViewerUrl = generateAllmapsMosaicViewerUrl;
-window.copyAnnotationJson = copyAnnotationJson;
 window.copyToClipboard = copyToClipboard;
 window.goToPage = goToPage;
 window.goToMosaicMapsPage = goToMosaicMapsPage;
