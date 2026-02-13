@@ -99,7 +99,6 @@ const elements = {
   mosaicsPagination: document.getElementById('mosaics-pagination'),
   mapsContent: document.getElementById('maps-content'),
   mosaicsContent: document.getElementById('mosaics-content'),
-  loading: document.getElementById('loading'),
   loadingBar: document.getElementById('loading-bar'),
   rectifiedOnly: document.getElementById('rectified-only'),
   rectifiedFilterContainer: document.getElementById('rectified-filter-container'),
@@ -234,11 +233,7 @@ function switchTab(tab) {
   
   // Update clear button visibility
   const currentQuery = tab === 'maps' ? state.mapsSearchQuery : state.mosaicsSearchQuery;
-  if (currentQuery) {
-    elements.clearSearchBtn.classList.remove('hidden');
-  } else {
-    elements.clearSearchBtn.classList.add('hidden');
-  }
+  elements.clearSearchBtn.classList.toggle('hidden', !currentQuery);
   
   updateUrlParams();
   
@@ -352,7 +347,7 @@ async function loadMosaics() {
 }
 
 async function loadMosaicDetail(layerId) {
-  showLoading();
+  showLoadingBar();
   
   // Hide normal UI, show mosaic detail view
   document.querySelector('.tabs').style.display = 'none';
@@ -470,14 +465,16 @@ async function loadMosaicDetail(layerId) {
       loadMosaicMaps(layerId, attrs.maps_count);
     });
     
+    hideLoadingBar();
+    
     // Load mosaic maps
     await loadMosaicMaps(layerId, attrs.maps_count);
     
   } catch (error) {
     console.error('Error loading mosaic detail:', error);
     detailContainer.innerHTML = `<p class="error">Error loading mosaic: ${error.message}</p>`;
+    hideLoadingBar();
   }
-  hideLoading();
 }
 
 async function loadMosaicMaps(layerId, totalMapsCount) {
@@ -700,14 +697,6 @@ function goToPage(page, type) {
 }
 
 // Helpers
-function showLoading() {
-  elements.loading.classList.remove('hidden');
-}
-
-function hideLoading() {
-  elements.loading.classList.add('hidden');
-}
-
 function showLoadingBar() {
   elements.loadingBar.classList.remove('hidden');
 }
