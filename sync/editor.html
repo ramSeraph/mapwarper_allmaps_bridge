@@ -21,8 +21,12 @@
     .header.allmaps { background: #9b59b6; }
     .header.mapwarper { background: #e67e22; }
     .header h1 { font-size: 1rem; white-space: nowrap; }
-    .header a { color: #fff; text-decoration: none; font-size: 0.85rem; white-space: nowrap; opacity: 0.9; }
-    .header a:hover { opacity: 1; }
+    .header a, .header .nav-btn { color: #fff; text-decoration: none; font-size: 0.85rem; white-space: nowrap; opacity: 0.9; }
+    .header a:hover, .header .nav-btn:hover { opacity: 1; }
+    .nav-buttons { display: flex; gap: 8px; }
+    .nav-btn { background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 4px; border: none; cursor: pointer; }
+    .nav-btn:hover { background: rgba(255,255,255,0.25); }
+    .right-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
     
     .copy-section {
       display: flex;
@@ -145,11 +149,16 @@
 <body>
   <div class="header" id="header">
     <h1 id="title">📝 Editor</h1>
-    <a href="./">← Home</a>
-    <a href="" id="compare-link">⚖️ Compare</a>
-    <div id="copy-controls"></div>
-    <div id="sync-status"></div>
-    <button class="btn" id="refresh-btn" onclick="refreshStatus()" style="margin-left:8px;">🔄 Refresh</button>
+    <div class="nav-buttons">
+      <a href="./" class="nav-btn">🏠 Home</a>
+      <a href="./" id="map-link" class="nav-btn">🗺️ Map</a>
+    </div>
+    <div class="right-controls">
+      <div id="copy-controls"></div>
+      <div id="sync-status"></div>
+      <a href="" id="compare-link" class="nav-btn">⚖️ Compare</a>
+      <button class="btn" id="refresh-btn" onclick="refreshStatus()">🔄 Refresh</button>
+    </div>
   </div>
   <div id="content"></div>
   <script type="module" src="editor.js"></script>

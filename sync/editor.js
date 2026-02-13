@@ -13,11 +13,17 @@ const headerEl = document.getElementById('header');
 const titleEl = document.getElementById('title');
 const syncStatusEl = document.getElementById('sync-status');
 const compareLinkEl = document.getElementById('compare-link');
+const mapLinkEl = document.getElementById('map-link');
 
 // Set up header based on mode
 headerEl.classList.add(mode);
 titleEl.textContent = mode === 'mapwarper' ? '📝 Sync to MapWarper' : '📝 Sync to Allmaps';
 document.title = mode === 'mapwarper' ? 'Sync to MapWarper' : 'Sync to Allmaps';
+
+// Set map link with mapId in search query
+if (mapId) {
+  mapLinkEl.href = `./?q=${mapId}`;
+}
 
 if (!mapId) {
   contentEl.innerHTML = '<div class="error">Missing map ID.<br><br>Usage: ?map={mapId}&mode=allmaps|mapwarper</div>';
